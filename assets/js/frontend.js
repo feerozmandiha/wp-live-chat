@@ -5,25 +5,37 @@
         constructor() {
             console.log('🚀 WP Live Chat Initializing...');
             
-            this.config = window.wpLiveChat || {};
+            // بررسی وجود config
+            if (!window.wpLiveChat) {
+                console.error('❌ wpLiveChat config is missing!');
+                return;
+            }
+            
+            this.config = window.wpLiveChat;
+            
+            // بررسی فیلدهای ضروری config
+            if (!this.config.sessionId) {
+                console.error('❌ sessionId is missing in config!');
+                return;
+            }
+            
+            console.log('Config loaded successfully:', {
+                hasSessionId: !!this.config.sessionId,
+                hasAjaxUrl: !!this.config.ajaxurl,
+                hasNonce: !!this.config.nonce
+            });
+            
             this.pusher = null;
             this.channel = null;
-            this.isConnected = false; // به طور پیش‌فرض فعال
+            this.isConnected = false;
             this.isOpen = false;
             this.unreadCount = 0;
             this.sessionId = this.config.sessionId;
-            this.currentUser = this.config.currentUser;
+            this.currentUser = this.config.currentUser || {};
             this.messageHistoryLoaded = false;
-            this.userInfoSubmitted = this.config.currentUser.info_completed || false;
+            this.userInfoSubmitted = (this.currentUser && this.currentUser.info_completed) || false;
             this.messageCount = 0;
             this.infoFormShown = false;
-            
-            console.log('Config loaded:', {
-                hasPusherKey: !!this.config.pusherKey,
-                hasPusherCluster: !!this.config.pusherCluster,
-                sessionId: this.sessionId,
-                currentUser: this.currentUser
-            });
             
             this.init();
         }
@@ -35,11 +47,40 @@
                 this.createDOM();
                 this.bindEvents();
                 this.initPusher();
-                this.startConnectionMonitor(); // این خط را اضافه کنید
+                this.startConnectionMonitor();
                 console.log('✅ Initialization completed successfully');
             } catch (error) {
                 console.error('❌ Initialization failed:', error);
+                this.showGlobalError('خطا در راه‌اندازی چت: ' + error.message);
             }
+        }
+
+        showGlobalError(message) {
+            console.error('💥 Global Error:', message);
+            const errorDiv = document.createElement('div');
+            errorDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: #dc3232;
+                color: white;
+                padding: 15px;
+                border-radius: 5px;
+                z-index: 1000000;
+                max-width: 300px;
+            `;
+            errorDiv.innerHTML = `
+                <strong>خطا در چت:</strong>
+                <p style="margin: 5px 0 0 0; font-size: 12px;">${message}</p>
+            `;
+            document.body.appendChild(errorDiv);
+            
+            // حذف خودکار بعد از 10 ثانیه
+            setTimeout(() => {
+                if (errorDiv.parentNode) {
+                    errorDiv.parentNode.removeChild(errorDiv);
+                }
+            }, 10000);
         }
 
         createDOM() {
@@ -92,9 +133,18 @@
         bindEvents() {
             console.log('Binding events...');
             
-            // رویدادهای toggle
+            // رویدادهای toggle - با دیباگ بیشتر
             if (this.toggle) {
-                this.toggle.addEventListener('click', () => this.openChat());
+                console.log('✅ Toggle button found, adding click event');
+                this.toggle.addEventListener('click', (e) => {
+                    console.log('🎯 Toggle clicked!', e);
+                    this.openChat();
+                });
+                
+                // تست ساده برای اطمینان از کارکرد کلیک
+                this.toggle.style.cursor = 'pointer';
+            } else {
+                console.error('❌ Toggle button not found!');
             }
 
             // رویدادهای بستن
@@ -318,20 +368,43 @@
         }
 
         openChat() {
-            console.log('Opening chat...');
-            this.container.classList.remove('wp-live-chat-hidden');
-            this.isOpen = true;
-            this.unreadCount = 0;
-            this.updateNotificationBadge();
-            
-            // اگر اطلاعات کاربر کامل نیست، فرم را نمایش بده
-            if (!this.userInfoSubmitted && !this.infoFormShown) {
-                this.showUserInfoForm();
-            } else {
-                this.showChatInterface();
+            try {
+                console.log('🎯 openChat() called');
+                console.log('📦 Container state:', {
+                    container: this.container,
+                    classList: this.container ? this.container.classList : 'no container'
+                });
+                
+                if (!this.container) {
+                    console.error('❌ Container is null in openChat!');
+                    return;
+                }
+                
+                this.container.classList.remove('wp-live-chat-hidden');
+                this.isOpen = true;
+                this.unreadCount = 0;
+                this.updateNotificationBadge();
+                
+                console.log('✅ Chat opened successfully');
+                console.log('📊 Current state:', {
+                    isOpen: this.isOpen,
+                    userInfoSubmitted: this.userInfoSubmitted,
+                    infoFormShown: this.infoFormShown
+                });
+                
+                // اگر اطلاعات کاربر کامل نیست، فرم را نمایش بده
+                if (!this.userInfoSubmitted && !this.infoFormShown) {
+                    console.log('📝 Showing user info form');
+                    this.showUserInfoForm();
+                } else {
+                    console.log('💬 Showing chat interface');
+                    this.showChatInterface();
+                }
+                
+            } catch (error) {
+                console.error('❌ Error in openChat:', error);
+                this.showGlobalError('خطا در باز کردن چت: ' + error.message);
             }
-            
-            console.log('✅ Chat opened');
         }
 
         showUserInfoForm() {
@@ -457,6 +530,7 @@
             }
         }
 
+        // در متد submitUserInfo - اضافه کردن header برای UTF-8
         async submitUserInfo() {
             const form = this.container.querySelector('#contact-info-form');
             if (!form) return;
@@ -489,7 +563,11 @@
                         company: company,
                         session_id: this.sessionId
                     },
-                    dataType: 'json'
+                    dataType: 'json',
+                    contentType: 'application/x-www-form-urlencoded; charset=UTF-8', // اضافه کردن charset
+                    beforeSend: function(xhr) {
+                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                    }
                 });
 
                 if (response.success) {
@@ -590,13 +668,14 @@
             return isValid;
         }
 
+        // در متد sendMessage - اصلاح بخش ارسال پیام
         async sendMessage() {
-
-                    // بررسی آیا اطلاعات کاربر کامل است
+            // بررسی آیا اطلاعات کاربر کامل است
             if (!this.userInfoSubmitted) {
                 this.showUserInfoForm();
                 return;
             }
+            
             if (!this.textarea) return;
             
             const message = this.textarea.value.trim();
@@ -606,7 +685,7 @@
                 return;
             }
 
-                    // افزایش شمارنده پیام
+            // افزایش شمارنده پیام
             this.messageCount++;
 
             console.log('Sending message:', message);
@@ -625,7 +704,8 @@
                     user_id: this.currentUser.id,
                     user_name: this.currentUser.name,
                     timestamp: new Date().toISOString(),
-                    type: 'user'
+                    type: 'user',
+                    isTemp: true // علامت گذاری پیام موقت
                 });
 
                 // 2. پاک کردن textarea (تجربه کاربری بهتر)
@@ -644,12 +724,13 @@
                         user_name: this.currentUser.name,
                         session_id: this.sessionId,
                         timestamp: new Date().toISOString(),
-                        type: 'user'
+                        type: 'user',
+                        isTemp: true
                     });
                     console.log('✅ Message sent via Pusher');
                 }
 
-                // 4. ارسال به سرور در پس‌زمینه (اگر خطا داد، مهم نیست)
+                // 4. ارسال به سرور در پس‌زمینه
                 try {
                     const response = await $.ajax({
                         url: this.config.ajaxurl,
@@ -663,31 +744,47 @@
                             session_id: this.sessionId
                         },
                         dataType: 'json',
-                        timeout: 5000 // 5 ثانیه timeout
+                        timeout: 5000
                     });
 
                     if (response.success) {
-                        console.log('✅ Message also saved to database');
-                        // آپدیت ID پیام اگر نیاز بود
-                        this.updateMessageId(tempMessageId, response.data.message_id);
+                        console.log('✅ Message saved to database');
+                        // حذف پیام موقت و جایگزینی با پیام اصلی
+                        this.replaceTempMessage(tempMessageId, response.data.message_id);
                     }
                 } catch (dbError) {
-                    console.warn('⚠️ Database save failed, but message was sent via Pusher:', dbError);
-                    // خطای دیتابیس را نادیده بگیریم - پیام از طریق Pusher ارسال شده
+                    console.warn('⚠️ Database save failed:', dbError);
+                    // در صورت خطا، پیام موقت را به عنوان دائمی علامت‌گذاری کنید
+                    this.markMessageAsPermanent(tempMessageId);
                 }
 
             } catch (error) {
                 console.error('❌ Send message error:', error);
-                // فقط خطاهای جدی را نمایش دهید
-                if (!error.status || error.status !== 200) {
-                    this.showError('خطا در ارسال پیام');
-                }
+                this.showError('خطا در ارسال پیام');
             } finally {
                 if (this.sendButton) {
                     this.sendButton.disabled = false;
                     this.sendButton.textContent = this.config.strings.send;
                     this.validateInput();
                 }
+            }
+        }
+
+        // اضافه کردن متدهای جدید برای مدیریت پیام‌های موقت
+        replaceTempMessage(tempId, realId) {
+            const messageElement = this.messagesContainer.querySelector(`[data-message-id="${tempId}"]`);
+            if (messageElement) {
+                messageElement.dataset.messageId = realId;
+                messageElement.classList.remove('temp-message');
+                console.log('✅ Temp message replaced with real ID:', realId);
+            }
+        }
+
+        markMessageAsPermanent(tempId) {
+            const messageElement = this.messagesContainer.querySelector(`[data-message-id="${tempId}"]`);
+            if (messageElement) {
+                messageElement.classList.remove('temp-message');
+                console.log('✅ Temp message marked as permanent');
             }
         }
 
@@ -699,7 +796,7 @@
             }
         }
 
-        displayMessage(messageData, shouldScroll = true) {
+        displayMessage(messageData, shouldScroll = true) { // مقدار پیش‌فرض اضافه شد
             if (!this.messagesContainer) return;
             
             const messageEl = this.createMessageElement(messageData);
@@ -713,6 +810,9 @@
         createMessageElement(messageData) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${messageData.type}-message`;
+            if (messageData.isTemp) {
+                messageDiv.classList.add('temp-message');
+            }
             messageDiv.dataset.messageId = messageData.id;
 
             const time = new Date(messageData.timestamp).toLocaleTimeString('fa-IR', {
@@ -743,6 +843,12 @@
         }
 
         handleIncomingMessage(data) {
+
+                        // اگر پیام از خود کاربر است و موقت است، نمایش نده
+            if (data.type === 'user' && data.isTemp) {
+                console.log('📨 Ignoring duplicate user message:', data.id);
+                return;
+            }
             this.displayMessage(data);
             
             if (!this.isOpen) {
@@ -836,12 +942,12 @@
                     user_name: message.user_name,
                     timestamp: message.created_at,
                     type: message.message_type
-                }, false); // false یعنی اسکرول نکن
+                }, false); // اضافه کردن پارامتر false برای عدم اسکرول
             });
 
             // در انتها یک بار اسکرول به پایین
             this.scrollToBottom();
-        }     
+        }   
 
         showError(message) {
             if (!this.messagesContainer) return;

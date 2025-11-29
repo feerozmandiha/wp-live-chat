@@ -1,48 +1,175 @@
+// Variables
+$primary-color: #007cba;
+$primary-dark: #005a87;
+$success-color: #46b450;
+$danger-color: #dc3232;
+$warning-color: #ffb900;
+$text-color: #1e1e1e;
+$text-light: #666;
+$border-color: #ddd;
+$background-light: #f8f9fa;
+$shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+$shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+// Mixins
+@mixin flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@mixin transition($property: all, $duration: 0.3s) {
+    transition: $property $duration ease-in-out;
+}
+
+@mixin responsive($breakpoint) {
+    @if $breakpoint == mobile {
+        @media (max-width: 767px) { @content; }
+    }
+    @if $breakpoint == tablet {
+        @media (max-width: 1024px) { @content; }
+    }
+}
+
+/* استایل‌های پنل مدیریت چت */
+.chat-admin-container {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 20px;
+    height: 70vh;
+    max-height: 600px;
+
+    @include responsive(mobile) {
+        grid-template-columns: 1fr;
+        height: auto;
+        max-height: none;
+    }
+}
+
+.chat-messages-admin {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: calc(70vh - 150px);
+    min-height: 300px;
+
+    &::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: #c1c1c1;
+        border-radius: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+        background: #a8a8a8;
+    }
+}
+
+.chat-window-admin {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-height: 600px;
+}
+
+.chat-input-admin {
+    padding: 15px;
+    border-top: 1px solid #ddd;
+    background: #f9f9f9;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.messages-info {
+    text-align: center;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #666;
+}
+
+.load-more-messages {
+    text-align: center;
+    padding: 10px;
+
+    button {
+        background: #007cba;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+
+        &:hover {
+            background: #005a87;
+        }
+    }
+}
+
 .wp-live-chat-admin {
     max-width: 800px;
-    
+
     .chat-admin-header {
         background: white;
         padding: 20px;
         border-radius: 8px;
         margin-bottom: 20px;
         border-left: 4px solid #007cba;
-        
+
         h2 {
             margin: 0 0 8px 0;
             color: #1e1e1e;
         }
-        
+
         p {
             margin: 0;
             color: #666;
         }
     }
-    
+
     .chat-admin-test {
         background: white;
         padding: 20px;
         border-radius: 8px;
         margin-top: 20px;
         border: 1px solid #ddd;
-        
+
         h3 {
             margin: 0 0 16px 0;
             color: #1e1e1e;
         }
-        
+
         .test-result {
             margin-top: 12px;
-            
-            &.success, &.error {
+
+            &.success,
+            &.error {
                 .notice {
                     margin: 0;
                     padding: 10px 12px;
-                    
+
                     &.notice-success {
                         border-left-color: #46b450;
                     }
-                    
+
                     &.notice-error {
                         border-left-color: #dc3232;
                     }
@@ -50,23 +177,22 @@
             }
         }
     }
-    
+
     .form-table {
         th {
             padding: 20px 10px 20px 0;
             width: 200px;
         }
-        
+
         td {
             padding: 15px 10px;
         }
     }
 }
 
-// دکمه تست اتصال
 #test-pusher-connection {
     position: relative;
-    
+
     &:disabled {
         &::after {
             content: '';
@@ -85,23 +211,396 @@
 }
 
 @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
-// responsive
 @media (max-width: 782px) {
     .wp-live-chat-admin {
         .form-table {
-            th, td {
+            th,
+            td {
                 display: block;
                 width: 100%;
                 padding: 10px 0;
             }
-            
+
             th {
                 padding-bottom: 5px;
             }
+        }
+    }
+}
+
+/* استایل‌های اضافی برای پیام‌ها */
+.message-admin {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    max-width: 80%;
+    word-wrap: break-word;
+
+    &.message-admin-user {
+        background: #e7f3ff;
+        margin-right: auto;
+        margin-left: 0;
+        border-bottom-left-radius: 4px;
+    }
+
+    &.message-user {
+        background: #f0f0f0;
+        margin-left: auto;
+        margin-right: 0;
+        border-bottom-right-radius: 4px;
+    }
+
+    .message-content {
+        p {
+            margin: 0;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+    }
+
+    .message-time {
+        font-size: 11px;
+        color: $text-light;
+        margin-top: 4px;
+        text-align: right;
+    }
+
+    .sender-name {
+        font-size: 10px;
+        color: $text-light;
+        margin-right: 5px;
+    }
+}
+
+.no-chat-selected {
+    text-align: center;
+    padding: 40px 20px;
+    color: $text-light;
+    font-style: italic;
+    font-size: 14px;
+}
+
+/* استایل‌های session list */
+.sessions-list {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 15px;
+    background: #f9f9f9;
+
+    h3 {
+        margin-top: 0;
+        color: $text-color;
+        border-bottom: 1px solid $border-color;
+        padding-bottom: 10px;
+    }
+}
+
+.session-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #e1e1e1;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+
+    &:hover {
+        border-color: $primary-color;
+        background: #f8f9fa;
+    }
+
+    &.active {
+        border-color: $primary-color;
+        background: #e7f3ff;
+        box-shadow: 0 2px 4px rgba(0, 124, 186, 0.1);
+    }
+}
+
+.session-user {
+    flex: 1;
+
+    strong {
+        display: block;
+        margin-bottom: 4px;
+        color: $text-color;
+        font-size: 14px;
+    }
+
+    small {
+        color: $text-light;
+        font-size: 12px;
+    }
+
+    .last-message {
+        color: $text-light;
+        font-style: italic;
+        font-size: 11px;
+    }
+}
+
+.session-info {
+    font-size: 11px;
+    color: #888;
+    text-align: left;
+    margin-right: 10px;
+}
+
+.session-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+
+    &.online {
+        background: $success-color;
+        animation: pulse 2s infinite;
+    }
+
+    &.offline {
+        background: #ccc;
+    }
+}
+
+.unread-badge {
+    background: $danger-color;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 6px;
+    font-size: 10px;
+    min-width: 16px;
+    text-align: center;
+}
+
+.no-sessions, .no-messages {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+}
+
+/* دکمه reload */
+#reload-sessions {
+    margin-bottom: 15px;
+    background: $primary-color;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    @include transition;
+
+    &:hover {
+        background: $primary-dark;
+    }
+}
+
+/* انیمیشن پالس برای وضعیت آنلاین */
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(70, 180, 80, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(70, 180, 80, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(70, 180, 80, 0);
+    }
+}
+
+/* استایل‌های فرم در پنل مدیریت */
+.chat-input-admin {
+    textarea {
+        width: 100%;
+        height: 60px;
+        resize: vertical;
+        border: 1px solid $border-color;
+        border-radius: 4px;
+        padding: 8px;
+        font-family: inherit;
+        font-size: 14px;
+
+        &:focus {
+            outline: none;
+            border-color: $primary-color;
+            box-shadow: 0 0 0 1px $primary-color;
+        }
+
+        &:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+    }
+
+    button {
+        background: $primary-color;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 14px;
+        @include transition;
+
+        &:hover:not(:disabled) {
+            background: $primary-dark;
+        }
+
+        &:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    }
+}
+
+/* استایل‌های هدر چت مدیریت */
+.chat-header-admin {
+    padding: 15px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+
+    h3 {
+        margin: 0;
+        color: $text-color;
+        font-size: 16px;
+    }
+}
+
+.status-online { 
+    color: $success-color; 
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.status-offline { 
+    color: $text-light;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+/* استایل‌های نوتیفیکیشن */
+.notice {
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    border-left: 4px solid;
+
+    &.notice-success {
+        background: #f0f9f0;
+        border-left-color: $success-color;
+        color: #2e7d32;
+    }
+
+    &.notice-error {
+        background: #fdf2f2;
+        border-left-color: $danger-color;
+        color: #c53030;
+    }
+
+    &.notice-warning {
+        background: #fff8e1;
+        border-left-color: $warning-color;
+        color: #e65100;
+    }
+
+    &.inline {
+        display: inline-block;
+        margin: 5px 0;
+    }
+}
+
+/* ریسپانسیو برای پنل مدیریت */
+@media (max-width: 1024px) {
+    .chat-admin-container {
+        grid-template-columns: 250px 1fr;
+        gap: 15px;
+    }
+}
+
+@media (max-width: 767px) {
+    .chat-admin-container {
+        grid-template-columns: 1fr;
+        height: 80vh;
+    }
+
+    .sessions-list {
+        margin-bottom: 20px;
+    }
+
+    .chat-messages-admin {
+        max-height: calc(80vh - 200px);
+        min-height: 200px;
+    }
+
+    .message-admin {
+        max-width: 90%;
+    }
+}
+
+/* استایل‌های برای حالت تاریک */
+@media (prefers-color-scheme: dark) {
+    .wp-live-chat-admin {
+        .chat-admin-header,
+        .chat-admin-test {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+
+        .sessions-list {
+            background: #2d3748;
+            border-color: #4a5568;
+
+            h3 {
+                color: #e2e8f0;
+                border-bottom-color: #4a5568;
+            }
+        }
+
+        .session-item {
+            background: #4a5568;
+            border-color: #718096;
+            color: #e2e8f0;
+
+            &:hover {
+                background: #5a6578;
+            }
+
+            &.active {
+                background: #2b6cb0;
+            }
+        }
+
+        .chat-messages-admin {
+            background: #2d3748;
+            color: #e2e8f0;
+        }
+
+        .message-admin.message-user {
+            background: #4a5568;
+            color: #e2e8f0;
+        }
+
+        .message-admin.message-admin-user {
+            background: #2b6cb0;
+            color: #e2e8f0;
         }
     }
 }

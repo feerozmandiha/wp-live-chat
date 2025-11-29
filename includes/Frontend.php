@@ -185,6 +185,20 @@ class Frontend {
             WP_LIVE_CHAT_VERSION,
             true
         );
+
+                // استایل‌ها - از پوشه build
+        $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/frontend-style.css';
+        if (file_exists($css_path)) {
+            wp_enqueue_style(
+                'wp-live-chat-frontend',
+                WP_LIVE_CHAT_PLUGIN_URL . 'build/frontend-style.css',
+                [],
+                WP_LIVE_CHAT_VERSION
+            );
+        } else {
+            // Fallback به استایل داخلی
+            $this->add_inline_styles();
+        }
         
         // انتقال داده‌ها به JavaScript
         wp_localize_script('wp-live-chat-frontend', 'wpLiveChat', [
