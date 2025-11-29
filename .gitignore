@@ -1,10 +1,5 @@
-# نادیده گرفتن پوشه node_modules
-node_modules/
-
-# نادیده گرفتن فایل‌های لاگ
+/node_modules/
+/vendor/
+/build/
 *.log
-
-# نادیده گرفتن فایل‌های موقت سیستم‌عامل
 .DS_Store
-Thumbs.db
-package-lock.json

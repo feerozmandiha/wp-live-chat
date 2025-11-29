@@ -342,7 +342,7 @@ class Database {
             }
             
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %s",
+                "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %s AND message_type = 'user'",
                 $session_id
             ));
             
@@ -477,6 +477,162 @@ class Database {
     
     private function get_user_agent(): string {
         return sanitize_text_field($_SERVER['HTTP_USER_AGENT'] ?? '');
+    }
+
+    /**
+     * دریافت تمام sessions با قابلیت فیلتر بر اساس وضعیت
+     */
+    public function get_all_sessions(string $status = 'all'): array {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        try {
+            if (!$this->table_exists($table_name)) {
+                return [];
+            }
+            
+            $query = "SELECT * FROM {$table_name}";
+            $params = [];
+            
+            if ($status !== 'all') {
+                $query .= " WHERE status = %s";
+                $params[] = $status;
+            }
+            
+            $query .= " ORDER BY last_activity DESC";
+            
+            if (!empty($params)) {
+                $sessions = $wpdb->get_results(
+                    $wpdb->prepare($query, $params),
+                    ARRAY_A
+                );
+            } else {
+                $sessions = $wpdb->get_results($query, ARRAY_A);
+            }
+            
+            // اگر خطای دیتابیس وجود دارد، لاگ کن
+            if ($wpdb->last_error) {
+                error_log('WP Live Chat - Database error in get_all_sessions: ' . $wpdb->last_error);
+                return [];
+            }
+            
+            return is_array($sessions) ? $sessions : [];
+            
+        } catch (Exception $e) {
+            error_log('WP Live Chat - Exception in get_all_sessions: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * دریافت اطلاعات یک session خاص بر اساس session_id
+     */
+    public function get_session(string $session_id): ?array {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        try {
+            if (!$this->table_exists($table_name)) {
+                return null;
+            }
+            
+            $session = $wpdb->get_row(
+                $wpdb->prepare(
+                    "SELECT * FROM {$table_name} WHERE session_id = %s",
+                    $session_id
+                ),
+                ARRAY_A
+            );
+            
+            // اگر خطای دیتابیس وجود دارد، لاگ کن
+            if ($wpdb->last_error) {
+                error_log('WP Live Chat - Database error in get_session: ' . $wpdb->last_error);
+                return null;
+            }
+            
+            return $session ?: null;
+            
+        } catch (Exception $e) {
+            error_log('WP Live Chat - Exception in get_session: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * دریافت sessions بسته شده
+     */
+    public function get_closed_sessions(): array {
+        return $this->get_all_sessions('closed');
+    }
+
+    /**
+     * دریافت تعداد کل sessions
+     */
+    public function get_total_sessions_count(): int {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        try {
+            if (!$this->table_exists($table_name)) {
+                return 0;
+            }
+            
+            $count = (int) $wpdb->get_var("SELECT COUNT(*) FROM {$table_name}");
+            
+            return $count;
+            
+        } catch (Exception $e) {
+            error_log('WP Live Chat - Exception in get_total_sessions_count: ' . $e->getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * دریافت sessions با pagination
+     */
+    public function get_sessions_paginated(int $page = 1, int $per_page = 20, string $status = 'all'): array {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        $offset = ($page - 1) * $per_page;
+        
+        try {
+            if (!$this->table_exists($table_name)) {
+                return [];
+            }
+            
+            $query = "SELECT * FROM {$table_name}";
+            $params = [];
+            
+            if ($status !== 'all') {
+                $query .= " WHERE status = %s";
+                $params[] = $status;
+            }
+            
+            $query .= " ORDER BY last_activity DESC LIMIT %d OFFSET %d";
+            $params[] = $per_page;
+            $params[] = $offset;
+            
+            $sessions = $wpdb->get_results(
+                $wpdb->prepare($query, $params),
+                ARRAY_A
+            );
+            
+            // اگر خطای دیتابیس وجود دارد، لاگ کن
+            if ($wpdb->last_error) {
+                error_log('WP Live Chat - Database error in get_sessions_paginated: ' . $wpdb->last_error);
+                return [];
+            }
+            
+            return is_array($sessions) ? $sessions : [];
+            
+        } catch (Exception $e) {
+            error_log('WP Live Chat - Exception in get_sessions_paginated: ' . $e->getMessage());
+            return [];
+        }
     }
     
     public function get_table_status(): array {

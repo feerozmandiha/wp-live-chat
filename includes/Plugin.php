@@ -54,18 +54,28 @@ class Plugin {
     
     private function init_services(): void {
         $services = [
-            'core' => Core::class,
-            'pusher_service' => Pusher_Service::class,
-            'admin' => Admin::class,
-            'chat_admin' => Chat_Admin::class, // این خط را اضافه کنید
-            'frontend' => Frontend::class,
-            'blocks' => Blocks::class,
-            'database' => Database::class,
+            'core' => [Core::class, 'new'],
+            'pusher_service' => [Pusher_Service::class, 'new'],
+            'admin' => [Admin::class, 'new'],
+            'chat_admin' => [Chat_Admin::class, 'new'],
+            'frontend' => [Frontend::class, 'new'],
+            'blocks' => [Blocks::class, 'new'],
+            'database' => [Database::class, 'new'],
+            'logger' => [Logger::class, 'singleton'],
+            'cache' => [Cache_Manager::class, 'new'],
+            'rest_api' => [REST_API::class, 'new'],
         ];
         
-        foreach ($services as $key => $class) {
+        foreach ($services as $key => $service_config) {
+            list($class, $type) = $service_config;
+            
             if (class_exists($class)) {
-                $this->services[$key] = new $class();
+                if ($type === 'singleton') {
+                    $this->services[$key] = $class::get_instance();
+                } else {
+                    $this->services[$key] = new $class();
+                }
+                
                 if (method_exists($this->services[$key], 'init')) {
                     $this->services[$key]->init();
                 }

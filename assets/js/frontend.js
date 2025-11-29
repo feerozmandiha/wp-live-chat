@@ -36,6 +36,8 @@
             this.userInfoSubmitted = (this.currentUser && this.currentUser.info_completed) || false;
             this.messageCount = 0;
             this.infoFormShown = false;
+            this.currentInputType = null; // 'phone', 'name', null
+            this.isWaitingForInput = false;
             
             this.init();
         }
@@ -53,6 +55,34 @@
                 console.error('❌ Initialization failed:', error);
                 this.showGlobalError('خطا در راه‌اندازی چت: ' + error.message);
             }
+        }
+
+            // اضافه کردن این متدها به کلاس
+        handleSystemMessage(messageData) {
+            console.log('🔧 Handling system message:', messageData);
+            
+            if (messageData.requires_input) {
+                this.currentInputType = messageData.input_type;
+                this.isWaitingForInput = true;
+                this.updateInputPlaceholder();
+            }
+        }
+
+        updateInputPlaceholder() {
+            if (!this.textarea) return;
+            
+            const placeholders = {
+                phone: 'شماره موبایل خود را وارد کنید... (مثال: 09123456789)',
+                name: 'نام و نام خانوادگی خود را وارد کنید...',
+                default: 'پیام خود را تایپ کنید...'
+            };
+            
+            this.textarea.placeholder = placeholders[this.currentInputType] || placeholders.default;
+            
+            // پاک کردن محتوای قبلی
+            this.textarea.value = '';
+            this.updateCharCounter();
+            this.validateInput();
         }
 
         showGlobalError(message) {
@@ -670,11 +700,11 @@
 
         // در متد sendMessage - اصلاح بخش ارسال پیام
         async sendMessage() {
-            // بررسی آیا اطلاعات کاربر کامل است
-            if (!this.userInfoSubmitted) {
-                this.showUserInfoForm();
-                return;
-            }
+        // اگر در حال دریافت اطلاعات هستیم، به جای پیام عادی اطلاعات را ذخیره کنیم
+        if (this.isWaitingForInput && this.currentInputType) {
+            await this.handleUserInput();
+            return;
+        }
             
             if (!this.textarea) return;
             
@@ -770,6 +800,100 @@
             }
         }
 
+        async handleUserInput() {
+            if (!this.textarea) return;
+            
+            const inputValue = this.textarea.value.trim();
+            
+            if (!inputValue) {
+                console.log('Input value is empty');
+                return;
+            }
+
+            if (this.sendButton) {
+                this.sendButton.disabled = true;
+                this.sendButton.textContent = 'در حال ارسال...';
+            }
+
+            try {
+                let response;
+                
+                if (this.currentInputType === 'phone') {
+                    response = await this.savePhoneNumber(inputValue);
+                } else if (this.currentInputType === 'name') {
+                    response = await this.saveUserName(inputValue);
+                }
+                
+                if (response && response.success) {
+                    console.log('✅ User input saved successfully');
+                    
+                    // نمایش پیام کاربر به صورت محلی
+                    this.displayUserInputMessage(inputValue);
+                    
+                    // ریست کردن حالت
+                    this.currentInputType = null;
+                    this.isWaitingForInput = false;
+                    this.updateInputPlaceholder();
+                    
+                } else {
+                    console.error('❌ Failed to save user input');
+                    this.showError('خطا در ذخیره اطلاعات');
+                }
+
+            } catch (error) {
+                console.error('❌ Error saving user input:', error);
+                this.showError('خطا در ارتباط با سرور');
+            } finally {
+                if (this.sendButton) {
+                    this.sendButton.disabled = false;
+                    this.sendButton.textContent = this.config.strings.send;
+                    this.validateInput();
+                }
+            }
+        }
+
+        async saveUserName(name) {
+            return await $.ajax({
+                url: this.config.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'save_user_name',
+                    nonce: this.config.nonce,
+                    name: name,
+                    session_id: this.sessionId
+                },
+                dataType: 'json'
+            });
+        }       
+
+        async savePhoneNumber(phone) {
+            return await $.ajax({
+                url: this.config.ajaxurl,
+                type: 'POST',
+                data: {
+                    action: 'save_user_phone',
+                    nonce: this.config.nonce,
+                    phone: phone,
+                    session_id: this.sessionId
+                },
+                dataType: 'json'
+            });
+        }        
+
+
+        displayUserInputMessage(inputValue) {
+            const messageData = {
+                id: 'temp_input_' + Date.now(),
+                message: inputValue,
+                user_id: this.currentUser.id,
+                user_name: this.currentUser.name,
+                timestamp: new Date().toISOString(),
+                type: 'user'
+            };
+            
+            this.displayMessage(messageData);
+        }  
+
         // اضافه کردن متدهای جدید برای مدیریت پیام‌های موقت
         replaceTempMessage(tempId, realId) {
             const messageElement = this.messagesContainer.querySelector(`[data-message-id="${tempId}"]`);
@@ -843,19 +967,23 @@
         }
 
         handleIncomingMessage(data) {
-
-                        // اگر پیام از خود کاربر است و موقت است، نمایش نده
+            // اگر پیام از خود کاربر است و موقت است، نمایش نده
             if (data.type === 'user' && data.isTemp) {
                 console.log('📨 Ignoring duplicate user message:', data.id);
                 return;
             }
+            
+            // اگر پیام سیستمی است که نیاز به ورودی دارد
+            if (data.type === 'system' && data.requires_input) {
+                this.handleSystemMessage(data);
+            }
+            
             this.displayMessage(data);
             
             if (!this.isOpen) {
                 this.unreadCount++;
                 this.updateNotificationBadge();
                 
-                // نمایش notification
                 this.showDesktopNotification(data);
             }
         }

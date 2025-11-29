@@ -8,13 +8,19 @@
         "start": "wp-scripts start",
         "dev": "wp-scripts start",
         "prod": "wp-scripts build",
+        "build:all": "npm run build && composer install --optimize-autoloader",
+        "dev:all": "npm run dev & composer install --optimize-autoloader",
         "lint:js": "wp-scripts lint-js",
         "lint:css": "wp-scripts lint-css",
         "packages-update": "wp-scripts packages-update"
     },
     "devDependencies": {
         "@wordpress/scripts": "^27.9.0",
-        "sass": "^1.94.2"
+        "sass": "^1.71.0",
+        "sass-loader": "^16.0.1",
+        "css-loader": "^7.1.2",
+        "mini-css-extract-plugin": "^2.9.2",
+        "style-loader": "^4.0.0"
     },
     "dependencies": {
         "@wordpress/block-editor": "^12.0.0",
