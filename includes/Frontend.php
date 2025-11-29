@@ -11,14 +11,13 @@ class Frontend {
     private $user_data;
     private $user_info_step = 0; // 0: no info, 1: need phone, 2: need name, 3: completed
     
-public function init(): void {
-    error_log('🎯 WP Live Chat Frontend: init() method called!');
-    
+public function init(): void {    
     // تست اینکه هوک wp_enqueue_scripts کار می‌کند
     add_action('wp_enqueue_scripts', function() {
         error_log('🎯 WP Live Chat: wp_enqueue_scripts hook fired!');
     });
-    
+        add_action('wp_enqueue_scripts', [$this, 'wp_live_chat_enqueue_styles']); 
+
     add_action('wp_enqueue_scripts', [$this, 'enqueue_scripts']);
     add_action('wp_footer', [$this, 'render_chat_widget']);
     add_action('wp_ajax_send_chat_message', [$this, 'handle_send_message']);
@@ -35,8 +34,41 @@ public function init(): void {
     $this->session_id = $this->generate_session_id();
     $this->user_data = $this->get_current_user_data();
     $this->user_info_step = $this->get_user_info_step();
-    
     error_log('✅ WP Live Chat Frontend: All hooks registered');
+}
+
+/**
+ * ثبت و بارگذاری استایل پلاگین
+ */
+public function wp_live_chat_enqueue_styles() {
+    // مسیر فایل CSS
+    $css_url = WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css';
+    $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/css/frontend-style.css';
+
+    if (file_exists($css_path)) {
+        error_log('WP Live Chat - Enqueueing CSS: ' . $css_url);
+        
+        // ابتدا register کنید
+        wp_register_style(
+            'wp-live-chat-frontend-css',
+            $css_url,
+            [],
+            WP_LIVE_CHAT_VERSION
+        );
+        
+        // سپس enqueue کنید
+        wp_enqueue_style('wp-live-chat-frontend-css');
+        
+        error_log('WP Live Chat: CSS registered and enqueued successfully');
+    } else {
+        error_log('WP Live Chat - CSS file not found, using inline styles');
+        
+        // register استایل خالی برای اضافه کردن inline استایل
+        wp_register_style('wp-live-chat-frontend-css', false);
+        wp_enqueue_style('wp-live-chat-frontend-css');
+        $this->add_inline_styles();
+    }
+
 }
 
     private function get_user_info_step(): int {
@@ -201,14 +233,6 @@ public function enqueue_scripts(): void {
 
     error_log('🎯 WP Live Chat: enqueue_scripts() called!');
 
-    // دیباگ مسیر فایل
-    $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/css/frontend-style.css';
-    $css_url = WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css';
-
-    error_log('WP Live Chat - CSS Path: ' . $css_path);
-    error_log('WP Live Chat - CSS URL: ' . $css_url);
-    error_log('WP Live Chat - CSS File Exists: ' . (file_exists($css_path) ? 'YES' : 'NO'));
-
     // کتابخانه Pusher
     wp_enqueue_script(
         'pusher',
@@ -227,30 +251,6 @@ public function enqueue_scripts(): void {
         true
     );
 
-    // ابتدا استایل را register کنید
-    if (file_exists($css_path)) {
-        error_log('WP Live Chat - Enqueueing CSS: ' . $css_url);
-        
-        // ابتدا register کنید
-        wp_register_style(
-            'wp-live-chat-frontend-css',
-            $css_url,
-            [],
-            WP_LIVE_CHAT_VERSION
-        );
-        
-        // سپس enqueue کنید
-        wp_enqueue_style('wp-live-chat-frontend-css');
-        
-        error_log('WP Live Chat: CSS registered and enqueued successfully');
-    } else {
-        error_log('WP Live Chat - CSS file not found, using inline styles');
-        
-        // register استایل خالی برای اضافه کردن inline استایل
-        wp_register_style('wp-live-chat-frontend-css', false);
-        wp_enqueue_style('wp-live-chat-frontend-css');
-        $this->add_inline_styles();
-    }
     
     // انتقال داده‌ها به JavaScript
     wp_localize_script('wp-live-chat-frontend-js', 'wpLiveChat', [
@@ -273,7 +273,6 @@ public function enqueue_scripts(): void {
         ]
     ]);
     
-    error_log('✅ WP Live Chat: Scripts and styles enqueued successfully');
 }
 
     private function add_inline_styles(): void {
