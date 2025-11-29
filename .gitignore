@@ -7,7 +7,4 @@ node_modules/
 # نادیده گرفتن فایل‌های موقت سیستم‌عامل
 .DS_Store
 Thumbs.db
-
-# اگر پوشه build یا dist دارید و نمی‌خواهید به مخزن برود
-dist/
-build/
+package-lock.json
