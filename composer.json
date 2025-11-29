@@ -1,0 +1,20 @@
+{
+    "name": "your-name/wp-live-chat",
+    "description": "یک سیستم چت آنلاین سبک و مدرن برای وردپرس",
+    "type": "wordpress-plugin",
+    "require": {
+        "php": ">=8.0",
+        "pusher/pusher-php-server": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "WP_Live_Chat\\": "includes/"
+        }
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}

@@ -1,0 +1,50 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "wp-live-chat/chat-button",
+    "version": "1.0.0",
+    "title": "دکمه چت آنلاین",
+    "category": "design",
+    "description": "یک دکمه برای باز کردن چت آنلاین",
+    "keywords": ["چت", "دکمه", "پشتیبانی", "تماس"],
+    "textdomain": "wp-live-chat",
+    "attributes": {
+        "buttonText": {
+            "type": "string",
+            "default": "شروع چت"
+        },
+        "buttonStyle": {
+            "type": "string",
+            "default": "primary"
+        },
+        "buttonSize": {
+            "type": "string",
+            "default": "medium"
+        },
+        "backgroundColor": {
+            "type": "string",
+            "default": "#007cba"
+        },
+        "textColor": {
+            "type": "string",
+            "default": "#ffffff"
+        },
+        "icon": {
+            "type": "string",
+            "default": "chat"
+        },
+        "align": {
+            "type": "string",
+            "default": "center"
+        }
+    },
+    "supports": {
+        "align": true,
+        "html": false,
+        "multiple": true,
+        "reusable": true
+    },
+    "editorScript": "file:./index.js",
+    "editorStyle": "file:./index.css",
+    "style": "file:./style-index.css"
+}

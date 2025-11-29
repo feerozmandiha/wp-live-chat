@@ -1,0 +1,157 @@
+// Variables
+$primary-color: #007cba;
+$primary-dark: #005a87;
+$success-color: #46b450;
+$danger-color: #dc3232;
+$warning-color: #ffb900;
+$text-color: #1e1e1e;
+$text-light: #666;
+$border-color: #ddd;
+$background-light: #f8f9fa;
+$shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+$shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+// Mixins
+@mixin flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@mixin transition($property: all, $duration: 0.3s) {
+    transition: $property $duration ease-in-out;
+}
+
+@mixin responsive($breakpoint) {
+    @if $breakpoint == mobile {
+        @media (max-width: 767px) { @content; }
+    }
+    @if $breakpoint == tablet {
+        @media (max-width: 1024px) { @content; }
+    }
+}
+
+/* استایل‌های بخش راه‌های ارتباطی */
+.salenoo-chat-alternatives {
+    padding: 15px 20px;
+    border-top: 1px solid #f0f0f0;
+    background: #fafafa;
+    direction: rtl;
+}
+
+.salenoo-chat-alternatives small {
+    display: block;
+    margin-bottom: 10px;
+    color: #666;
+    font-size: 12px;
+    text-align: center;
+}
+
+.salenoo-contact-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.salenoo-contact-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    border-radius: 25px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.salenoo-contact-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.salenoo-contact-wa {
+    background: linear-gradient(135deg, #25D366, #128C7E);
+    color: white;
+}
+
+.salenoo-contact-wa:hover {
+    background: linear-gradient(135deg, #128C7E, #25D366);
+    border-color: #25D366;
+}
+
+.salenoo-contact-call {
+    background: linear-gradient(135deg, #0066cc, #004499);
+    color: white;
+}
+
+.salenoo-contact-call:hover {
+    background: linear-gradient(135deg, #004499, #0066cc);
+    border-color: #0066cc;
+}
+
+.salenoo-contact-btn svg {
+    flex-shrink: 0;
+}
+
+.salenoo-contact-btn span {
+    white-space: nowrap;
+}
+
+/* ریسپانسیو برای موبایل */
+@media (max-width: 767px) {
+    .salenoo-contact-buttons {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .salenoo-contact-btn {
+        justify-content: center;
+        padding: 12px 16px;
+    }
+}
+
+/* انیمیشن برای دکمه‌ها */
+@keyframes pulse-glow {
+    0% {
+        box-shadow: 0 0 0 0 rgba(37, 211, 102, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba(37, 211, 102, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(37, 211, 102, 0);
+    }
+}
+
+.salenoo-contact-wa {
+    animation: pulse-glow 2s infinite;
+}
+
+/* برای حالت تاریک (اگر تم دارید) */
+@media (prefers-color-scheme: dark) {
+    .salenoo-chat-alternatives {
+        background: #2d3748;
+        border-top-color: #4a5568;
+    }
+    
+    .salenoo-chat-alternatives small {
+        color: #cbd5e0;
+    }
+}
+
+.wp-live-chat-widget {
+    // استایل‌های فرانت‌اند در فایل اصلی CSS افزونه لود می‌شوند
+    display: none; // در ادیتور نمایش داده نمی‌شود
+}
+
+// استایل‌های پیش‌نمایش در ادیتور
+.wp-block-wp-live-chat-chat-widget {
+    margin: 20px 0;
+    
+    .chat-widget-preview {
+        pointer-events: none; // غیرفعال کردن تعامل در ادیتور
+    }
+}

@@ -1,0 +1,109 @@
+.wp-live-chat-button-wrapper {
+    margin: 10px 0;
+    
+    &.align-left {
+        text-align: left;
+    }
+    
+    &.align-center {
+        text-align: center;
+    }
+    
+    &.align-right {
+        text-align: right;
+    }
+}
+
+.wp-live-chat-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 2px solid;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    line-height: 1;
+    
+    // Sizes
+    &.size-small {
+        padding: 8px 16px;
+        font-size: 13px;
+        
+        .dashicon {
+            width: 14px;
+            height: 14px;
+        }
+    }
+    
+    &.size-medium {
+        padding: 12px 24px;
+        font-size: 14px;
+        
+        .dashicon {
+            width: 16px;
+            height: 16px;
+        }
+    }
+    
+    &.size-large {
+        padding: 16px 32px;
+        font-size: 16px;
+        
+        .dashicon {
+            width: 18px;
+            height: 18px;
+        }
+    }
+    
+    // Styles
+    &.style-primary {
+        &:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        
+        &:active {
+            transform: translateY(0);
+        }
+    }
+    
+    &.style-secondary {
+        background-color: #6c757d !important;
+        
+        &:hover {
+            background-color: #5a6268 !important;
+            transform: translateY(-1px);
+        }
+    }
+    
+    &.style-outline {
+        background-color: transparent !important;
+        
+        &:hover {
+            background-color: rgba(0, 124, 186, 0.1) !important;
+        }
+    }
+    
+    &.style-text {
+        background-color: transparent !important;
+        border-color: transparent !important;
+        
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+    
+    .dashicon {
+        margin: 0;
+    }
+}
+
+// RTL Support
+.rtl {
+    .wp-live-chat-button {
+        flex-direction: row-reverse;
+    }
+}

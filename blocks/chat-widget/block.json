@@ -1,0 +1,51 @@
+{
+    "$schema": "https://schemas.wp.org/trunk/block.json",
+    "apiVersion": 3,
+    "name": "wp-live-chat/chat-widget",
+    "version": "1.0.0",
+    "title": "ویجت چت آنلاین",
+    "category": "widgets",
+    "description": "یک ویجت چت آنلاین سبک برای ارتباط با کاربران",
+    "keywords": ["چت", "آنلاین", "ویجت", "پشتیبانی"],
+    "textdomain": "wp-live-chat",
+    "attributes": {
+        "position": {
+            "type": "string",
+            "default": "bottom-right"
+        },
+        "title": {
+            "type": "string",
+            "default": "چت آنلاین"
+        },
+        "subtitle": {
+            "type": "string",
+            "default": "ما آنلاین هستیم، سوال خود را بپرسید"
+        },
+        "onlineStatus": {
+            "type": "boolean",
+            "default": true
+        },
+        "backgroundColor": {
+            "type": "string",
+            "default": "#007cba"
+        },
+        "textColor": {
+            "type": "string",
+            "default": "#ffffff"
+        },
+        "animation": {
+            "type": "string",
+            "default": "bounce"
+        }
+    },
+    "supports": {
+        "html": false,
+        "align": false,
+        "multiple": false,
+        "reusable": false,
+        "inserter": true
+    },
+    "editorScript": "file:./index.js",
+    "editorStyle": "file:./index.css",
+    "style": "file:./style-index.css"
+}

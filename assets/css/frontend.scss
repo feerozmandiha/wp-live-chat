@@ -1,0 +1,1133 @@
+// Variables
+$primary-color: #007cba;
+$primary-dark: #005a87;
+$success-color: #46b450;
+$danger-color: #dc3232;
+$warning-color: #ffb900;
+$text-color: #1e1e1e;
+$text-light: #666;
+$border-color: #ddd;
+$background-light: #f8f9fa;
+$shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+$shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+// Mixins
+@mixin flex-center {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@mixin transition($property: all, $duration: 0.3s) {
+    transition: $property $duration ease-in-out;
+}
+
+@mixin responsive($breakpoint) {
+    @if $breakpoint == mobile {
+        @media (max-width: 767px) { @content; }
+    }
+    @if $breakpoint == tablet {
+        @media (max-width: 1024px) { @content; }
+    }
+}
+
+/* وضعیت اتصال */
+.connection-quality {
+    position: absolute;
+    top: -25px;
+    left: 10px;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #f8f9fa;
+}
+
+.connection-quality.excellent { background: #46b450; color: white; }
+.connection-quality.good { background: #ffb900; color: black; }
+.connection-quality.poor { background: #dc3232; color: white; }
+.connection-quality.disconnected { background: #666; color: white; }
+
+/* استایل‌های جدید برای نمایش بهتر پیام‌ها */
+.message-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    font-size: 12px;
+}
+
+.message-sender {
+    font-weight: bold;
+    color: #333;
+}
+
+.message-time {
+    color: #666;
+    font-size: 11px;
+}
+
+.message-content {
+    margin: 0;
+}
+
+.welcome-message {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin: 10px 0;
+}
+
+/* بهبود نمایش پیام‌ها */
+.message-user {
+    background: #e3f2fd;
+    margin-left: 20%;
+    margin-right: 0;
+    border-radius: 12px 12px 0 12px;
+}
+
+.message-admin {
+    background: #f5f5f5;
+    margin-right: 20%;
+    margin-left: 0;
+    border-radius: 12px 12px 12px 0;
+}
+
+.message-user .message-sender {
+    color: #1976d2;
+}
+
+.message-admin .message-sender {
+    color: #d32f2f;
+}
+
+/* استایل‌های اختصاصی برای پنل مدیریت چت */
+.chat-admin-container {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 20px;
+    height: 70vh;
+    
+    @include responsive(mobile) {
+        grid-template-columns: 1fr;
+        height: auto;
+    }
+}
+
+.sessions-list {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 15px;
+    background: #f9f9f9;
+    
+    h3 {
+        margin-top: 0;
+        color: $text-color;
+        border-bottom: 1px solid $border-color;
+        padding-bottom: 10px;
+    }
+}
+
+.session-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid #e1e1e1;
+    border-radius: 8px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
+    
+    &:hover {
+        border-color: $primary-color;
+        background: #f8f9fa;
+    }
+    
+    &.active {
+        border-color: $primary-color;
+        background: #e7f3ff;
+        box-shadow: 0 2px 4px rgba(0, 124, 186, 0.1);
+    }
+}
+
+.session-user {
+    flex: 1;
+    
+    strong {
+        display: block;
+        margin-bottom: 4px;
+        color: $text-color;
+    }
+    
+    small {
+        color: $text-light;
+        font-size: 12px;
+    }
+    
+    .last-message {
+        color: $text-light;
+        font-style: italic;
+    }
+}
+
+.session-info {
+    font-size: 11px;
+    color: #888;
+    text-align: left;
+    margin-right: 10px;
+}
+
+.session-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    
+    &.online {
+        background: $success-color;
+        animation: pulse 2s infinite;
+    }
+    
+    &.offline {
+        background: #ccc;
+    }
+}
+
+.unread-badge {
+    background: $danger-color;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 6px;
+    font-size: 10px;
+    min-width: 16px;
+    text-align: center;
+}
+
+.no-sessions, .no-messages {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-style: italic;
+}
+
+/* دکمه reload */
+#reload-sessions {
+    margin-bottom: 15px;
+    background: $primary-color;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    @include transition;
+    
+    &:hover {
+        background: $primary-dark;
+    }
+}
+
+/* پنجره چت مدیریت */
+.chat-window-admin {
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.chat-header-admin {
+    padding: 15px;
+    background: #f5f5f5;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    
+    h3 {
+        margin: 0;
+        color: $text-color;
+    }
+}
+
+.status-online { 
+    color: $success-color; 
+    font-weight: bold;
+}
+
+.status-offline { 
+    color: $text-light;
+    font-weight: bold;
+}
+
+.chat-messages-admin {
+    flex: 1;
+    padding: 15px;
+    overflow-y: auto;
+    background: white;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+        background: #ccc;
+        border-radius: 3px;
+    }
+}
+
+.message-admin {
+    margin-bottom: 10px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    max-width: 80%;
+    
+    &.message-admin-user {
+        background: #e7f3ff;
+        margin-right: auto;
+        margin-left: 0;
+        border-bottom-left-radius: 4px;
+    }
+    
+    &.message-user {
+        background: #f0f0f0;
+        margin-left: auto;
+        margin-right: 0;
+        border-bottom-right-radius: 4px;
+    }
+    
+    .message-content {
+        p {
+            margin: 0;
+            line-height: 1.4;
+        }
+    }
+    
+    .message-time {
+        font-size: 11px;
+        color: $text-light;
+        margin-top: 4px;
+    }
+    
+    .sender-name {
+        font-size: 10px;
+        color: $text-light;
+        margin-right: 5px;
+    }
+}
+
+.chat-input-admin {
+    padding: 15px;
+    border-top: 1px solid #ddd;
+    background: #f9f9f9;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    
+    textarea {
+        width: 100%;
+        height: 60px;
+        resize: vertical;
+        border: 1px solid $border-color;
+        border-radius: 4px;
+        padding: 8px;
+        font-family: inherit;
+        
+        &:focus {
+            outline: none;
+            border-color: $primary-color;
+        }
+        
+        &:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+    }
+    
+    button {
+        background: $primary-color;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        @include transition;
+        
+        &:hover:not(:disabled) {
+            background: $primary-dark;
+        }
+        
+        &:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+    }
+}
+
+.no-chat-selected {
+    text-align: center;
+    padding: 40px 20px;
+    color: $text-light;
+    font-style: italic;
+}
+
+// Main Chat Container - LEFT SIDE
+#wp-live-chat-container {
+    position: fixed;
+    z-index: 999999;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+    
+    // موقعیت پیش‌فرض: پایین سمت چپ
+    bottom: 30px;
+    left: 30px;
+    
+    @include responsive(mobile) {
+        bottom: 20px;
+        left: 20px;
+    }
+    
+    &.wp-live-chat-hidden {
+        .chat-widget {
+            transform: translateY(100px) translateX(-20px);
+            opacity: 0;
+            visibility: hidden;
+        }
+        
+        .chat-toggle {
+            transform: scale(1);
+            opacity: 1;
+        }
+    }
+    
+    &:not(.wp-live-chat-hidden) {
+        .chat-widget {
+            transform: translateY(0) translateX(0);
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .chat-toggle {
+            transform: scale(0);
+            opacity: 0;
+        }
+    }
+}
+
+// Position Classes - LEFT SIDE FOCUS
+.position-bottom-left {
+    bottom: 30px;
+    left: 30px;
+    right: auto !important;
+    
+    @include responsive(mobile) {
+        bottom: 20px;
+        left: 20px;
+    }
+}
+
+.position-top-left {
+    top: 30px;
+    left: 30px;
+    right: auto !important;
+    
+    @include responsive(mobile) {
+        top: 20px;
+        left: 20px;
+    }
+}
+
+// موقعیت‌های راست (برای موارد خاص)
+.position-bottom-right {
+    bottom: 30px;
+    right: 30px;
+    left: auto !important;
+    
+    @include responsive(mobile) {
+        bottom: 20px;
+        right: 20px;
+    }
+}
+
+.position-top-right {
+    top: 30px;
+    right: 30px;
+    left: auto !important;
+    
+    @include responsive(mobile) {
+        top: 20px;
+        right: 20px;
+    }
+}
+
+// Chat Widget - LEFT ALIGNED
+.chat-widget {
+    width: 380px;
+    height: 600px;
+    background: white;
+    border-radius: 16px;
+    box-shadow: $shadow;
+    display: flex;
+    flex-direction: column;
+    @include transition;
+    
+    // برای موقعیت چپ، ویجت به سمت راست باز می‌شود
+    margin-right: 0;
+    margin-left: auto;
+    
+    @include responsive(mobile) {
+        width: calc(100vw - 40px);
+        height: 70vh;
+        border-radius: 12px;
+        margin-left: 0;
+    }
+}
+
+// Chat Header
+.chat-header {
+    padding: 20px;
+    background: linear-gradient(135deg, $primary-color, $primary-dark);
+    color: white;
+    border-radius: 16px 16px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    
+    .chat-title {
+        h4 {
+            margin: 0 0 6px 0;
+            font-size: 18px;
+            font-weight: 600;
+        }
+    }
+    
+    .chat-close {
+        background: rgba(255, 255, 255, 0.2);
+        border: none;
+        color: white;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        @include flex-center;
+        cursor: pointer;
+        @include transition;
+        
+        &:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: rotate(90deg);
+        }
+    }
+}
+
+// Status Indicator
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: $success-color;
+        animation: pulse 2s infinite;
+        
+        &.connecting {
+            background: $warning-color;
+            animation: blink 1.5s infinite;
+        }
+        
+        &.offline {
+            background: $text-light;
+            animation: none;
+        }
+    }
+    
+    .status-text {
+        opacity: 0.9;
+    }
+}
+
+// Chat Messages - RTL Friendly for Left Side
+.chat-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    background: $background-light;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    
+    // برای موقعیت چپ، اسکرول بار در سمت چپ
+    direction: ltr;
+    
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+    
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    
+    &::-webkit-scrollbar-thumb {
+        background: #ccc;
+        border-radius: 3px;
+    }
+    
+    &::-webkit-scrollbar-thumb:hover {
+        background: #999;
+    }
+}
+
+// Message Styles - Optimized for Left Side
+.message {
+    max-width: 85%;
+    padding: 12px 16px;
+    border-radius: 18px;
+    position: relative;
+    animation: messageSlideLeft 0.3s ease-out;
+    direction: rtl;
+    
+    &.user-message {
+        align-self: flex-end;
+        background: $primary-color;
+        color: white;
+        border-bottom-right-radius: 6px;
+        border-bottom-left-radius: 18px;
+        margin-left: auto;
+        margin-right: 0;
+        
+        .message-time {
+            text-align: left;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        
+        .message-status {
+            left: 8px;
+            right: auto;
+        }
+    }
+    
+    &.admin-message {
+        align-self: flex-start;
+        background: white;
+        color: $text-color;
+        border: 1px solid $border-color;
+        border-bottom-left-radius: 6px;
+        border-bottom-right-radius: 18px;
+        margin-right: auto;
+        margin-left: 0;
+        
+        .message-time {
+            text-align: right;
+            color: $text-light;
+        }
+    }
+    
+    &.system-message {
+        align-self: center;
+        background: transparent;
+        color: $text-light;
+        font-style: italic;
+        text-align: center;
+        max-width: 100%;
+        padding: 8px 0;
+        direction: rtl;
+    }
+    
+    .message-content {
+        p {
+            margin: 0;
+            font-size: 14px;
+            line-height: 1.4;
+            word-wrap: break-word;
+        }
+    }
+    
+    .message-time {
+        font-size: 11px;
+        margin-top: 6px;
+        opacity: 0.7;
+    }
+    
+    .message-status {
+        position: absolute;
+        bottom: 4px;
+        font-size: 10px;
+        
+        &.delivered {
+            color: $success-color;
+        }
+        
+        &.read {
+            color: $primary-color;
+        }
+    }
+}
+
+// Chat Input Area - RTL Optimized for Left Side
+.chat-input-area {
+    padding: 20px;
+    background: white;
+    border-top: 1px solid $border-color;
+    border-radius: 0 0 16px 16px;
+    direction: rtl;
+    
+    textarea {
+        width: 100%;
+        border: 1px solid $border-color;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 14px;
+        resize: none;
+        font-family: inherit;
+        @include transition;
+        direction: rtl;
+        text-align: right;
+        
+        &:focus {
+            outline: none;
+            border-color: $primary-color;
+            box-shadow: 0 0 0 2px rgba($primary-color, 0.1);
+        }
+        
+        &::placeholder {
+            color: #999;
+            text-align: right;
+        }
+        
+        &:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+    }
+}
+
+.chat-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    direction: rtl;
+    
+    .char-counter {
+        font-size: 12px;
+        color: $text-light;
+        
+        &.near-limit {
+            color: $warning-color;
+        }
+        
+        &.exceeded {
+            color: $danger-color;
+        }
+    }
+    
+    .send-button {
+        background: $primary-color;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        @include transition;
+        
+        &:hover:not(:disabled) {
+            background: $primary-dark;
+            transform: translateY(-1px);
+        }
+        
+        &:active:not(:disabled) {
+            transform: translateY(0);
+        }
+        
+        &:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+    }
+}
+
+// Chat Toggle Button - LEFT SIDE
+.chat-toggle {
+    position: fixed;
+    z-index: 999998;
+    cursor: pointer;
+    @include transition(all, 0.5s);
+    
+    // موقعیت پیش‌فرض: پایین سمت چپ
+    bottom: 30px;
+    left: 30px;
+    right: auto;
+    
+    @include responsive(mobile) {
+        bottom: 20px;
+        left: 20px;
+    }
+    
+    .chat-icon {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, $primary-color, $primary-dark);
+        border-radius: 50%;
+        @include flex-center;
+        font-size: 24px;
+        color: white;
+        box-shadow: $shadow;
+        @include transition;
+        
+        &:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 30px rgba($primary-color, 0.4);
+        }
+        
+        &:active {
+            transform: scale(0.95);
+        }
+    }
+    
+    .notification-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: $danger-color;
+        color: white;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        font-size: 11px;
+        @include flex-center;
+        animation: bounce 1s infinite;
+        
+        &:empty {
+            display: none;
+        }
+    }
+}
+
+// Animations - Optimized for Left Side
+@keyframes messageSlideLeft {
+    from {
+        opacity: 0;
+        transform: translateY(10px) translateX(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) translateX(0);
+    }
+}
+
+@keyframes pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba($success-color, 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 6px rgba($success-color, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba($success-color, 0);
+    }
+}
+
+@keyframes blink {
+    0%, 50% {
+        opacity: 1;
+    }
+    51%, 100% {
+        opacity: 0.3;
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translateY(0) scale(1);
+    }
+    40% {
+        transform: translateY(-3px) scale(1.1);
+    }
+    60% {
+        transform: translateY(-1px) scale(1.05);
+    }
+}
+
+// Block Animations
+.wp-live-chat-widget {
+    &.animation-bounce {
+        .chat-toggle .chat-icon {
+            animation: bounce 2s infinite;
+        }
+    }
+    
+    &.animation-pulse {
+        .chat-toggle .chat-icon {
+            animation: pulse 2s infinite;
+        }
+    }
+    
+    &.animation-float {
+        .chat-toggle .chat-icon {
+            animation: floatLeft 3s ease-in-out infinite;
+        }
+    }
+}
+
+@keyframes floatLeft {
+    0%, 100% {
+        transform: translateY(0) translateX(0);
+    }
+    50% {
+        transform: translateY(-8px) translateX(5px);
+    }
+}
+
+// RTL Support - Enhanced for Left Side
+.rtl {
+    #wp-live-chat-container {
+        direction: rtl;
+    }
+    
+    .chat-header {
+        direction: rtl;
+        
+        .chat-close {
+            transform: scaleX(-1);
+        }
+    }
+    
+    .chat-messages {
+        direction: rtl;
+    }
+    
+    .message {
+        direction: rtl;
+        
+        &.user-message {
+            border-bottom-right-radius: 18px;
+            border-bottom-left-radius: 6px;
+            margin-left: 0;
+            margin-right: auto;
+            
+            .message-time {
+                text-align: right;
+            }
+            
+            .message-status {
+                left: auto;
+                right: 8px;
+            }
+        }
+        
+        &.admin-message {
+            border-bottom-left-radius: 18px;
+            border-bottom-right-radius: 6px;
+            margin-right: 0;
+            margin-left: auto;
+            
+            .message-time {
+                text-align: left;
+            }
+        }
+    }
+    
+    .chat-input-area {
+        direction: rtl;
+        
+        textarea {
+            direction: rtl;
+            text-align: right;
+        }
+    }
+    
+    .chat-actions {
+        direction: rtl;
+        flex-direction: row-reverse;
+    }
+}
+
+// LTR Support for Left Side (Default)
+.ltr {
+    #wp-live-chat-container {
+        direction: ltr;
+    }
+    
+    .chat-header {
+        direction: ltr;
+    }
+    
+    .chat-messages {
+        direction: ltr;
+    }
+    
+    .message {
+        direction: ltr;
+        
+        &.user-message {
+            .message-time {
+                text-align: left;
+            }
+        }
+        
+        &.admin-message {
+            .message-time {
+                text-align: right;
+            }
+        }
+    }
+    
+    .chat-input-area {
+        direction: ltr;
+        
+        textarea {
+            direction: ltr;
+            text-align: left;
+        }
+    }
+    
+    .chat-actions {
+        direction: ltr;
+    }
+}
+
+// Loading States
+.chat-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    direction: rtl;
+    
+    .loading-spinner {
+        width: 24px;
+        height: 24px;
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid $primary-color;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+// Error States
+.chat-error {
+    text-align: center;
+    padding: 20px;
+    color: $danger-color;
+    direction: rtl;
+    
+    .error-icon {
+        font-size: 32px;
+        margin-bottom: 10px;
+    }
+    
+    .error-message {
+        font-size: 14px;
+        margin: 0;
+    }
+    
+    .retry-button {
+        margin-top: 10px;
+        background: $danger-color;
+        color: white;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        @include transition;
+        
+        &:hover {
+            background: darken($danger-color, 10%);
+        }
+    }
+}
+
+// Mobile Optimizations for Left Side
+@include responsive(mobile) {
+    #wp-live-chat-container {
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        
+        .chat-widget {
+            width: calc(100vw - 40px);
+            margin-left: 0;
+        }
+    }
+    
+    .chat-toggle {
+        bottom: 20px;
+        left: 20px;
+        
+        .chat-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 20px;
+        }
+    }
+    
+    .chat-admin-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .sessions-list {
+        margin-bottom: 20px;
+    }
+}
+
+// Print Styles
+@media print {
+    #wp-live-chat-container {
+        display: none !important;
+    }
+}
+
+// Notice Styles for Admin
+.notice {
+    padding: 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    border-left: 4px solid;
+    
+    &.notice-success {
+        background: #f0f9f0;
+        border-left-color: $success-color;
+        color: #2e7d32;
+    }
+    
+    &.notice-error {
+        background: #fdf2f2;
+        border-left-color: $danger-color;
+        color: #c53030;
+    }
+    
+    &.notice-warning {
+        background: #fff8e1;
+        border-left-color: $warning-color;
+        color: #e65100;
+    }
+    
+    &.inline {
+        display: inline-block;
+        margin: 5px 0;
+    }
+}

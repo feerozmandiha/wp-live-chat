@@ -1,0 +1,26 @@
+{
+    "name": "wp-live-chat",
+    "version": "1.0.0",
+    "description": "Live Chat Plugin for WordPress",
+    "main": "index.js",
+    "scripts": {
+        "build": "wp-scripts build",
+        "start": "wp-scripts start",
+        "dev": "wp-scripts start",
+        "prod": "wp-scripts build",
+        "lint:js": "wp-scripts lint-js",
+        "lint:css": "wp-scripts lint-css",
+        "packages-update": "wp-scripts packages-update"
+    },
+    "devDependencies": {
+        "@wordpress/scripts": "^27.9.0",
+        "sass": "^1.94.2"
+    },
+    "dependencies": {
+        "@wordpress/block-editor": "^12.0.0",
+        "@wordpress/blocks": "^12.0.0",
+        "@wordpress/components": "^25.0.0",
+        "@wordpress/element": "^5.0.0",
+        "@wordpress/i18n": "^4.0.0"
+    }
+}

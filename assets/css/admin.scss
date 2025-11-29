@@ -1,0 +1,107 @@
+.wp-live-chat-admin {
+    max-width: 800px;
+    
+    .chat-admin-header {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #007cba;
+        
+        h2 {
+            margin: 0 0 8px 0;
+            color: #1e1e1e;
+        }
+        
+        p {
+            margin: 0;
+            color: #666;
+        }
+    }
+    
+    .chat-admin-test {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-top: 20px;
+        border: 1px solid #ddd;
+        
+        h3 {
+            margin: 0 0 16px 0;
+            color: #1e1e1e;
+        }
+        
+        .test-result {
+            margin-top: 12px;
+            
+            &.success, &.error {
+                .notice {
+                    margin: 0;
+                    padding: 10px 12px;
+                    
+                    &.notice-success {
+                        border-left-color: #46b450;
+                    }
+                    
+                    &.notice-error {
+                        border-left-color: #dc3232;
+                    }
+                }
+            }
+        }
+    }
+    
+    .form-table {
+        th {
+            padding: 20px 10px 20px 0;
+            width: 200px;
+        }
+        
+        td {
+            padding: 15px 10px;
+        }
+    }
+}
+
+// دکمه تست اتصال
+#test-pusher-connection {
+    position: relative;
+    
+    &:disabled {
+        &::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 10px;
+            width: 16px;
+            height: 16px;
+            margin-top: -8px;
+            border: 2px solid transparent;
+            border-top: 2px solid #ffffff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+    }
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+// responsive
+@media (max-width: 782px) {
+    .wp-live-chat-admin {
+        .form-table {
+            th, td {
+                display: block;
+                width: 100%;
+                padding: 10px 0;
+            }
+            
+            th {
+                padding-bottom: 5px;
+            }
+        }
+    }
+}
