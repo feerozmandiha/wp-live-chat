@@ -52,36 +52,46 @@ class Plugin {
         add_action('init', [$this, 'load_textdomain']);
     }
     
-    private function init_services(): void {
-        $services = [
-            'core' => [Core::class, 'new'],
-            'pusher_service' => [Pusher_Service::class, 'new'],
-            'admin' => [Admin::class, 'new'],
-            'chat_admin' => [Chat_Admin::class, 'new'],
-            'frontend' => [Frontend::class, 'new'],
-            'blocks' => [Blocks::class, 'new'],
-            'database' => [Database::class, 'new'],
-            'logger' => [Logger::class, 'singleton'],
-            'cache' => [Cache_Manager::class, 'new'],
-            'rest_api' => [REST_API::class, 'new'],
-        ];
-        
-        foreach ($services as $key => $service_config) {
-            list($class, $type) = $service_config;
+private function init_services(): void {
+    $services = [
+        'core' => Core::class,
+        'pusher_service' => Pusher_Service::class,
+        'admin' => Admin::class,
+        'chat_admin' => Chat_Admin::class,
+        'frontend' => Frontend::class,
+        'blocks' => Blocks::class,
+        'database' => Database::class,
+        'logger' => Logger::class,
+        'cache' => Cache_Manager::class,
+        'rest_api' => REST_API::class,
+    ];
+    
+    foreach ($services as $key => $class) {
+        if (class_exists($class)) {
+            error_log("Initializing service: {$key} => {$class}");
             
-            if (class_exists($class)) {
-                if ($type === 'singleton') {
-                    $this->services[$key] = $class::get_instance();
-                } else {
-                    $this->services[$key] = new $class();
-                }
-                
-                if (method_exists($this->services[$key], 'init')) {
-                    $this->services[$key]->init();
-                }
+            // برای کلاس‌های Singleton از get_instance استفاده کنید
+            if ($class === Logger::class) {
+                $this->services[$key] = $class::get_instance();
+                error_log("✅ Logger initialized as singleton");
+            } else {
+                $this->services[$key] = new $class();
+                error_log("✅ {$class} initialized as new instance");
             }
+            
+            if (method_exists($this->services[$key], 'init')) {
+                $this->services[$key]->init();
+                error_log("✅ {$class} init() method called");
+            } else {
+                error_log("⚠️ {$class} does not have init() method");
+            }
+        } else {
+            error_log("❌ Class not found: {$class}");
         }
     }
+    
+    error_log("🎯 Total services initialized: " . count($this->services));
+}
     
     public function activate(): void {
         // ایجاد جداول دیتابیس

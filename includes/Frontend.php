@@ -11,24 +11,33 @@ class Frontend {
     private $user_data;
     private $user_info_step = 0; // 0: no info, 1: need phone, 2: need name, 3: completed
     
-    public function init(): void {
-        add_action('wp_enqueue_scripts', [$this, 'enqueue_scripts']);
-        add_action('wp_footer', [$this, 'render_chat_widget']);
-        add_action('wp_ajax_send_chat_message', [$this, 'handle_send_message']);
-        add_action('wp_ajax_nopriv_send_chat_message', [$this, 'handle_send_message']);
-        add_action('wp_ajax_auth_pusher_channel', [$this, 'handle_channel_auth']);
-        add_action('wp_ajax_nopriv_auth_pusher_channel', [$this, 'handle_channel_auth']);
-        add_action('wp_ajax_get_chat_history', [$this, 'get_chat_history']);
-        add_action('wp_ajax_nopriv_get_chat_history', [$this, 'get_chat_history']);
-        add_action('wp_ajax_save_user_phone', [$this, 'save_user_phone']);
-        add_action('wp_ajax_nopriv_save_user_phone', [$this, 'save_user_phone']);
-        add_action('wp_ajax_save_user_name', [$this, 'save_user_name']);
-        add_action('wp_ajax_nopriv_save_user_name', [$this, 'save_user_name']);
-        
-        $this->session_id = $this->generate_session_id();
-        $this->user_data = $this->get_current_user_data();
-        $this->user_info_step = $this->get_user_info_step();
-    }
+public function init(): void {
+    error_log('🎯 WP Live Chat Frontend: init() method called!');
+    
+    // تست اینکه هوک wp_enqueue_scripts کار می‌کند
+    add_action('wp_enqueue_scripts', function() {
+        error_log('🎯 WP Live Chat: wp_enqueue_scripts hook fired!');
+    });
+    
+    add_action('wp_enqueue_scripts', [$this, 'enqueue_scripts']);
+    add_action('wp_footer', [$this, 'render_chat_widget']);
+    add_action('wp_ajax_send_chat_message', [$this, 'handle_send_message']);
+    add_action('wp_ajax_nopriv_send_chat_message', [$this, 'handle_send_message']);
+    add_action('wp_ajax_auth_pusher_channel', [$this, 'handle_channel_auth']);
+    add_action('wp_ajax_nopriv_auth_pusher_channel', [$this, 'handle_channel_auth']);
+    add_action('wp_ajax_get_chat_history', [$this, 'get_chat_history']);
+    add_action('wp_ajax_nopriv_get_chat_history', [$this, 'get_chat_history']);
+    add_action('wp_ajax_save_user_phone', [$this, 'save_user_phone']);
+    add_action('wp_ajax_nopriv_save_user_phone', [$this, 'save_user_phone']);
+    add_action('wp_ajax_save_user_name', [$this, 'save_user_name']);
+    add_action('wp_ajax_nopriv_save_user_name', [$this, 'save_user_name']);
+    
+    $this->session_id = $this->generate_session_id();
+    $this->user_data = $this->get_current_user_data();
+    $this->user_info_step = $this->get_user_info_step();
+    
+    error_log('✅ WP Live Chat Frontend: All hooks registered');
+}
 
     private function get_user_info_step(): int {
         $saved_data = $this->get_saved_user_data();
@@ -184,64 +193,88 @@ class Frontend {
         return strlen($phone) === 12; // 989123456789
     }
     
-    public function enqueue_scripts(): void {
-        if (!$this->should_display_chat()) {
-            return;
-        }
-        
-        // کتابخانه Pusher
-        wp_enqueue_script(
-            'pusher',
-            'https://js.pusher.com/8.2.0/pusher.min.js',
-            [],
-            '8.2.0',
-            true
-        );
-        
-        // اسکریپت اصلی چت
-        wp_enqueue_script(
-            'wp-live-chat-frontend',
-            WP_LIVE_CHAT_PLUGIN_URL . 'build/js/frontend.js',
-            ['jquery', 'pusher'],
-            WP_LIVE_CHAT_VERSION,
-            true
-        );
-
-                // استایل‌ها - از پوشه build
-        $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/css/frontend-style.css';
-        if (file_exists($css_path)) {
-            wp_enqueue_style(
-                'wp-live-chat-frontend',
-                WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css',
-                [],
-                WP_LIVE_CHAT_VERSION
-            );
-        } else {
-            // Fallback به استایل داخلی
-            $this->add_inline_styles();
-        }
-        
-        // انتقال داده‌ها به JavaScript
-        wp_localize_script('wp-live-chat-frontend', 'wpLiveChat', [
-            'ajaxurl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('wp_live_chat_nonce'),
-            'pusherKey' => get_option('wp_live_chat_pusher_key', ''),
-            'pusherCluster' => get_option('wp_live_chat_pusher_cluster', 'mt1'),
-            'sessionId' => $this->session_id,
-            'currentUser' => $this->user_data,
-            'strings' => [
-                'typeMessage' => __('پیام خود را تایپ کنید...', 'wp-live-chat'),
-                'send' => __('ارسال', 'wp-live-chat'),
-                'online' => __('آنلاین', 'wp-live-chat'),
-                'offline' => __('آفلاین', 'wp-live-chat'),
-                'connecting' => __('در حال اتصال...', 'wp-live-chat'),
-                'welcome' => __('سلام! برای شروع چت، لطفاً اطلاعات خود را وارد کنید.', 'wp-live-chat'),
-                'phoneRequired' => __('شماره تلفن همراه الزامی است', 'wp-live-chat'),
-                'nameRequired' => __('نام الزامی است', 'wp-live-chat'),
-                'invalidPhone' => __('شماره تلفن معتبر نیست', 'wp-live-chat')
-            ]
-        ]);
+public function enqueue_scripts(): void {
+    if (!$this->should_display_chat()) {
+        error_log('WP Live Chat: Chat should not display');
+        return;
     }
+
+    error_log('🎯 WP Live Chat: enqueue_scripts() called!');
+
+    // دیباگ مسیر فایل
+    $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/css/frontend-style.css';
+    $css_url = WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css';
+
+    error_log('WP Live Chat - CSS Path: ' . $css_path);
+    error_log('WP Live Chat - CSS URL: ' . $css_url);
+    error_log('WP Live Chat - CSS File Exists: ' . (file_exists($css_path) ? 'YES' : 'NO'));
+
+    // کتابخانه Pusher
+    wp_enqueue_script(
+        'pusher',
+        'https://js.pusher.com/8.2.0/pusher.min.js',
+        [],
+        '8.2.0',
+        true
+    );
+    
+    // اسکریپت اصلی چت
+    wp_enqueue_script(
+        'wp-live-chat-frontend-js',
+        WP_LIVE_CHAT_PLUGIN_URL . 'build/js/frontend.js',
+        ['jquery', 'pusher'],
+        WP_LIVE_CHAT_VERSION,
+        true
+    );
+
+    // ابتدا استایل را register کنید
+    if (file_exists($css_path)) {
+        error_log('WP Live Chat - Enqueueing CSS: ' . $css_url);
+        
+        // ابتدا register کنید
+        wp_register_style(
+            'wp-live-chat-frontend-css',
+            $css_url,
+            [],
+            WP_LIVE_CHAT_VERSION
+        );
+        
+        // سپس enqueue کنید
+        wp_enqueue_style('wp-live-chat-frontend-css');
+        
+        error_log('WP Live Chat: CSS registered and enqueued successfully');
+    } else {
+        error_log('WP Live Chat - CSS file not found, using inline styles');
+        
+        // register استایل خالی برای اضافه کردن inline استایل
+        wp_register_style('wp-live-chat-frontend-css', false);
+        wp_enqueue_style('wp-live-chat-frontend-css');
+        $this->add_inline_styles();
+    }
+    
+    // انتقال داده‌ها به JavaScript
+    wp_localize_script('wp-live-chat-frontend-js', 'wpLiveChat', [
+        'ajaxurl' => admin_url('admin-ajax.php'),
+        'nonce' => wp_create_nonce('wp_live_chat_nonce'),
+        'pusherKey' => get_option('wp_live_chat_pusher_key', ''),
+        'pusherCluster' => get_option('wp_live_chat_pusher_cluster', 'mt1'),
+        'sessionId' => $this->session_id,
+        'currentUser' => $this->user_data,
+        'strings' => [
+            'typeMessage' => __('پیام خود را تایپ کنید...', 'wp-live-chat'),
+            'send' => __('ارسال', 'wp-live-chat'),
+            'online' => __('آنلاین', 'wp-live-chat'),
+            'offline' => __('آفلاین', 'wp-live-chat'),
+            'connecting' => __('در حال اتصال...', 'wp-live-chat'),
+            'welcome' => __('سلام! برای شروع چت، لطفاً اطلاعات خود را وارد کنید.', 'wp-live-chat'),
+            'phoneRequired' => __('شماره تلفن همراه الزامی است', 'wp-live-chat'),
+            'nameRequired' => __('نام الزامی است', 'wp-live-chat'),
+            'invalidPhone' => __('شماره تلفن معتبر نیست', 'wp-live-chat')
+        ]
+    ]);
+    
+    error_log('✅ WP Live Chat: Scripts and styles enqueued successfully');
+}
 
     private function add_inline_styles(): void {
         $inline_css = "
@@ -252,23 +285,8 @@ class Frontend {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
             }
             
-            .position-bottom-right {
-                bottom: 30px !important;
-                right: 30px !important;
-            }
-            
             .position-bottom-left {
                 bottom: 30px !important;
-                left: 30px !important;
-            }
-            
-            .position-top-right {
-                top: 30px !important;
-                right: 30px !important;
-            }
-            
-            .position-top-left {
-                top: 30px !important;
                 left: 30px !important;
             }
             
@@ -348,9 +366,9 @@ class Frontend {
             }
             
             @media (max-width: 767px) {
-                .position-bottom-right,
                 .position-bottom-left {
                     bottom: 20px !important;
+                    left: 20px !important;
                 }
                 
                 .chat-widget {
@@ -360,7 +378,8 @@ class Frontend {
             }
         ";
         
-        wp_add_inline_style('wp-live-chat-frontend', $inline_css);
+        // استفاده از handle صحیح
+        wp_add_inline_style('wp-live-chat-frontend-css', $inline_css);
     }
     
     private function get_current_user_data(): array {

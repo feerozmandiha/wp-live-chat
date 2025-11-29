@@ -48,12 +48,34 @@
             try {
                 this.createDOM();
                 this.bindEvents();
+                this.fixPointerEvents(); // اضافه کردن این خط
                 this.initPusher();
                 this.startConnectionMonitor();
                 console.log('✅ Initialization completed successfully');
             } catch (error) {
                 console.error('❌ Initialization failed:', error);
                 this.showGlobalError('خطا در راه‌اندازی چت: ' + error.message);
+            }
+        }
+
+            // اضافه کردن متد برای رفع مشکل pointer events
+        fixPointerEvents() {
+            if (!this.container) return;
+            
+            // اطمینان از اینکه وقتی چت بسته است، فقط toggle فعال باشد
+            if (this.container.classList.contains('wp-live-chat-hidden')) {
+                this.container.style.pointerEvents = 'none';
+                
+                // فعال کردن pointer events برای toggle
+                if (this.toggle) {
+                    this.toggle.style.pointerEvents = 'auto';
+                    if (this.toggle.parentNode) {
+                        this.toggle.parentNode.style.pointerEvents = 'auto';
+                    }
+                }
+            } else {
+                // وقتی چت باز است، همه چیز فعال
+                this.container.style.pointerEvents = 'auto';
             }
         }
 
@@ -400,10 +422,6 @@
         openChat() {
             try {
                 console.log('🎯 openChat() called');
-                console.log('📦 Container state:', {
-                    container: this.container,
-                    classList: this.container ? this.container.classList : 'no container'
-                });
                 
                 if (!this.container) {
                     console.error('❌ Container is null in openChat!');
@@ -415,12 +433,10 @@
                 this.unreadCount = 0;
                 this.updateNotificationBadge();
                 
+                // فعال کردن pointer events وقتی چت باز است
+                this.fixPointerEvents();
+                
                 console.log('✅ Chat opened successfully');
-                console.log('📊 Current state:', {
-                    isOpen: this.isOpen,
-                    userInfoSubmitted: this.userInfoSubmitted,
-                    infoFormShown: this.infoFormShown
-                });
                 
                 // اگر اطلاعات کاربر کامل نیست، فرم را نمایش بده
                 if (!this.userInfoSubmitted && !this.infoFormShown) {
@@ -648,7 +664,11 @@
             console.log('Closing chat...');
             this.container.classList.add('wp-live-chat-hidden');
             this.isOpen = false;
+
+                    // غیرفعال کردن pointer events وقتی چت بسته است
+            this.fixPointerEvents();
             console.log('✅ Chat closed');
+
         }
 
         updateCharCounter() {
