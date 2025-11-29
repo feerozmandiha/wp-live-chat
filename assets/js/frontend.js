@@ -14,6 +14,9 @@
             this.sessionId = this.config.sessionId;
             this.currentUser = this.config.currentUser;
             this.messageHistoryLoaded = false;
+            this.userInfoSubmitted = this.config.currentUser.info_completed || false;
+            this.messageCount = 0;
+            this.infoFormShown = false;
             
             console.log('Config loaded:', {
                 hasPusherKey: !!this.config.pusherKey,
@@ -321,8 +324,50 @@
             this.unreadCount = 0;
             this.updateNotificationBadge();
             
-            // بارگذاری تاریخچه پیام‌ها اگر قبلاً بارگذاری نشده
-            if (!this.messageHistoryLoaded) {
+            // اگر اطلاعات کاربر کامل نیست، فرم را نمایش بده
+            if (!this.userInfoSubmitted && !this.infoFormShown) {
+                this.showUserInfoForm();
+            } else {
+                this.showChatInterface();
+            }
+            
+            console.log('✅ Chat opened');
+        }
+
+        showUserInfoForm() {
+            console.log('📝 Showing user info form');
+            
+            // مخفی کردن بخش‌های دیگر
+            this.hideChatInterface();
+            
+            // نمایش فرم
+            const form = this.container.querySelector('#user-info-form');
+            if (form) {
+                form.style.display = 'block';
+                this.infoFormShown = true;
+            }
+            
+            // اضافه کردن event listener برای فرم
+            this.setupInfoForm();
+        }
+
+        showChatInterface() {
+            console.log('💬 Showing chat interface');
+            
+            // مخفی کردن فرم
+            const form = this.container.querySelector('#user-info-form');
+            if (form) {
+                form.style.display = 'none';
+            }
+            
+            // نمایش بخش چت
+            const inputArea = this.container.querySelector('.chat-input-area');
+            if (inputArea) {
+                inputArea.style.display = 'block';
+            }
+            
+            // بارگذاری تاریخچه اگر اطلاعات کاربر کامل است
+            if (this.userInfoSubmitted && !this.messageHistoryLoaded) {
                 this.loadMessageHistory();
             } else {
                 this.scrollToBottom();
@@ -333,8 +378,162 @@
                     this.textarea.focus();
                 }, 300);
             }
+        }
+
+        hideChatInterface() {
+            const inputArea = this.container.querySelector('.chat-input-area');
+            if (inputArea) {
+                inputArea.style.display = 'none';
+            }
+        }
+
+        setupInfoForm() {
+            const form = this.container.querySelector('#contact-info-form');
+            if (!form) return;
+
+            form.addEventListener('submit', (e) => {
+                e.preventDefault();
+                this.submitUserInfo();
+            });
+
+            // اعتبارسنجی real-time
+            const phoneInput = form.querySelector('#user-phone');
+            const nameInput = form.querySelector('#user-name');
+
+            if (phoneInput) {
+                phoneInput.addEventListener('input', () => {
+                    this.validatePhone(phoneInput.value);
+                });
+            }
+
+            if (nameInput) {
+                nameInput.addEventListener('input', () => {
+                    this.validateName(nameInput.value);
+                });
+            }
+        }
+
+        validatePhone(phone) {
+            const errorElement = document.getElementById('phone-error');
+            const phoneRegex = /^09[0-9]{9}$/;
             
-            console.log('✅ Chat opened');
+            if (!phone) {
+                this.showError(errorElement, this.config.strings.phoneRequired);
+                return false;
+            }
+            
+            if (!phoneRegex.test(phone)) {
+                this.showError(errorElement, this.config.strings.invalidPhone);
+                return false;
+            }
+            
+            this.hideError(errorElement);
+            return true;
+        }
+
+        validateName(name) {
+            const errorElement = document.getElementById('name-error');
+            
+            if (!name || name.trim().length < 2) {
+                this.showError(errorElement, this.config.strings.nameRequired);
+                return false;
+            }
+            
+            this.hideError(errorElement);
+            return true;
+        }
+
+        showError(element, message) {
+            if (element) {
+                element.textContent = message;
+                element.style.display = 'block';
+            }
+        }
+
+        hideError(element) {
+            if (element) {
+                element.textContent = '';
+                element.style.display = 'none';
+            }
+        }
+
+        async submitUserInfo() {
+            const form = this.container.querySelector('#contact-info-form');
+            if (!form) return;
+
+            const formData = new FormData(form);
+            const phone = formData.get('phone');
+            const name = formData.get('name');
+            const company = formData.get('company');
+
+            // اعتبارسنجی نهایی
+            if (!this.validatePhone(phone) || !this.validateName(name)) {
+                return;
+            }
+
+            const submitBtn = form.querySelector('.submit-btn');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'در حال ثبت...';
+            }
+
+            try {
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'save_user_info',
+                        nonce: this.config.nonce,
+                        phone: phone,
+                        name: name,
+                        company: company,
+                        session_id: this.sessionId
+                    },
+                    dataType: 'json'
+                });
+
+                if (response.success) {
+                    console.log('✅ User info saved successfully');
+                    
+                    // آپدیت اطلاعات کاربر
+                    this.userInfoSubmitted = true;
+                    this.config.currentUser = response.data.user_data;
+                    
+                    // نمایش رابط چت
+                    this.showChatInterface();
+                    
+                    // نمایش پیام خوش‌آمدگویی
+                    this.displayWelcomeMessage(name);
+                    
+                } else {
+                    console.error('❌ Failed to save user info:', response.data);
+                    alert('خطا در ثبت اطلاعات: ' + response.data);
+                }
+
+            } catch (error) {
+                console.error('❌ Error saving user info:', error);
+                alert('خطا در ارتباط با سرور');
+            } finally {
+                if (submitBtn) {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'شروع گفتگو';
+                }
+            }
+        }
+
+        displayWelcomeMessage(userName) {
+            const welcomeMsg = `
+                <div class="system-message">
+                    <div class="message-content">
+                        <p>سلام <strong>${this.escapeHtml(userName)}</strong>! خوش آمدید. چگونه می‌توانم کمک کنم؟</p>
+                    </div>
+                </div>
+            `;
+            
+            if (this.messagesContainer) {
+                this.messagesContainer.insertAdjacentHTML('beforeend', welcomeMsg);
+                this.scrollToBottom();
+            }
         }
 
         closeChat() {
@@ -392,6 +591,12 @@
         }
 
         async sendMessage() {
+
+                    // بررسی آیا اطلاعات کاربر کامل است
+            if (!this.userInfoSubmitted) {
+                this.showUserInfoForm();
+                return;
+            }
             if (!this.textarea) return;
             
             const message = this.textarea.value.trim();
@@ -400,6 +605,9 @@
                 console.log('Message validation failed');
                 return;
             }
+
+                    // افزایش شمارنده پیام
+            this.messageCount++;
 
             console.log('Sending message:', message);
 

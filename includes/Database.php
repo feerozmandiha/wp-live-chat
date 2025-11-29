@@ -38,6 +38,8 @@ class Database {
             user_id BIGINT(20) UNSIGNED DEFAULT 0,
             user_name VARCHAR(255) NOT NULL,
             user_email VARCHAR(255),
+            user_phone VARCHAR(20),
+            user_company VARCHAR(255),
             user_ip VARCHAR(45),
             user_agent TEXT,
             status ENUM('active', 'closed', 'timeout') DEFAULT 'active',
@@ -49,7 +51,8 @@ class Database {
             UNIQUE KEY session_id (session_id),
             KEY user_id (user_id),
             KEY status (status),
-            KEY last_activity (last_activity)
+            KEY last_activity (last_activity),
+            KEY user_phone (user_phone)
         ) {$this->charset_collate};";
         
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
@@ -102,7 +105,33 @@ class Database {
         }
     }
     
-
+    public function update_session_user_info(string $session_id, string $user_name, string $phone, string $company = ''): bool {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        $result = $wpdb->update(
+            $table_name,
+            [
+                'user_name' => $user_name,
+                'user_email' => $phone, // استفاده از شماره تلفن به عنوان ایمیل
+                'user_phone' => $phone,
+                'user_company' => $company,
+                'last_activity' => current_time('mysql')
+            ],
+            ['session_id' => $session_id],
+            ['%s', '%s', '%s', '%s', '%s'],
+            ['%s']
+        );
+        
+        if ($result) {
+            error_log("WP Live Chat: User info updated for session {$session_id} - Name: {$user_name}, Phone: {$phone}");
+            return true;
+        } else {
+            error_log("WP Live Chat: Failed to update user info for session {$session_id}");
+            return false;
+        }
+    }
     // اضافه کردن این متد برای ایجاد session هنگام اولین پیام
     public function ensure_session_exists($session_id, $user_data) {
         // اعتبارسنجی و encode کردن نام کاربر
@@ -385,7 +414,7 @@ class Database {
         }
     }
 
-        private function table_exists(string $table_name): bool {
+    private function table_exists(string $table_name): bool {
         global $wpdb;
         
         $result = $wpdb->get_var($wpdb->prepare(

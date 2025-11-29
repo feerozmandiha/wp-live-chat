@@ -8,6 +8,8 @@ use Exception; // این خط را اضافه کنید
 class Frontend {
     
     private $session_id;
+    private $user_data;
+
     
     public function init(): void {
         add_action('wp_enqueue_scripts', [$this, 'enqueue_scripts']);
@@ -16,11 +18,13 @@ class Frontend {
         add_action('wp_ajax_nopriv_send_chat_message', [$this, 'handle_send_message']);
         add_action('wp_ajax_auth_pusher_channel', [$this, 'handle_channel_auth']);
         add_action('wp_ajax_nopriv_auth_pusher_channel', [$this, 'handle_channel_auth']);
-                // اضافه کردن hook جدید برای تاریخچه چت
         add_action('wp_ajax_get_chat_history', [$this, 'get_chat_history']);
         add_action('wp_ajax_nopriv_get_chat_history', [$this, 'get_chat_history']);
+        add_action('wp_ajax_save_user_info', [$this, 'save_user_info']);
+        add_action('wp_ajax_nopriv_save_user_info', [$this, 'save_user_info']);
         
         $this->session_id = $this->generate_session_id();
+        $this->user_data = $this->get_current_user_data();
     }
 
     public function get_chat_history(): void {
@@ -66,6 +70,98 @@ class Frontend {
         
         return $session_id;
     }
+
+    private function save_user_data(array $data): bool {
+        $key = 'wp_live_chat_user_' . $this->session_id;
+        // ذخیره به مدت 30 روز
+        return set_transient($key, $data, 30 * DAY_IN_SECONDS);
+    }
+
+    private function get_saved_user_data(): array {
+        $key = 'wp_live_chat_user_' . $this->session_id;
+        $data = get_transient($key);
+        
+        if ($data && is_array($data)) {
+            $data['info_completed'] = !empty($data['phone']) && !empty($data['name']);
+            return $data;
+        }
+        
+        return [];
+    }
+
+    public function save_user_info(): void {
+        check_ajax_referer('wp_live_chat_nonce', 'nonce');
+        
+        $phone = sanitize_text_field($_POST['phone'] ?? '');
+        $name = sanitize_text_field($_POST['name'] ?? '');
+        $company = sanitize_text_field($_POST['company'] ?? '');
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        
+        if (empty($phone) || empty($name) || empty($session_id)) {
+            wp_send_json_error('لطفاً اطلاعات ضروری را وارد کنید');
+            return;
+        }
+        
+        // اعتبارسنجی شماره تلفن
+        if (!$this->validate_phone($phone)) {
+            wp_send_json_error('شماره تلفن معتبر نیست');
+            return;
+        }
+        
+        try {
+            // ذخیره اطلاعات کاربر
+            $user_data = [
+                'id' => 0,
+                'name' => $name,
+                'email' => '',
+                'phone' => $phone,
+                'company' => $company,
+                'is_logged_in' => false,
+                'info_completed' => true
+            ];
+            
+            $saved = $this->save_user_data($user_data);
+            
+            if ($saved) {
+                // آپدیت session با اطلاعات جدید کاربر
+                /** @var Database $database */
+                $database = Plugin::get_instance()->get_service('database');
+                $database->update_session_user_info($session_id, $name, $phone, $company);
+                
+                wp_send_json_success([
+                    'message' => 'اطلاعات با موفقیت ذخیره شد',
+                    'user_data' => $user_data
+                ]);
+            } else {
+                wp_send_json_error('خطا در ذخیره اطلاعات');
+            }
+            
+        } catch (Exception $e) {
+            wp_send_json_error('خطا: ' . $e->getMessage());
+        }
+    }
+
+    private function validate_phone($phone): bool {
+        // حذف فاصله و کاراکترهای غیرعددی
+        $phone = preg_replace('/\D/', '', $phone);
+        
+        // بررسی طول شماره (حداقل 10 رقم)
+        if (strlen($phone) < 10) {
+            return false;
+        }
+        
+        // اگر با 0 شروع شده، 0 را حذف کن
+        if (substr($phone, 0, 1) === '0') {
+            $phone = substr($phone, 1);
+        }
+        
+        // اضافه کردن پیشوند ایران
+        if (substr($phone, 0, 2) !== '98') {
+            $phone = '98' . $phone;
+        }
+        
+        return strlen($phone) === 12; // 989123456789
+    }
     
     public function enqueue_scripts(): void {
         if (!$this->should_display_chat()) {
@@ -90,20 +186,6 @@ class Frontend {
             true
         );
         
-        // استایل‌ها - از پوشه build
-        $css_path = WP_LIVE_CHAT_PLUGIN_PATH . 'build/frontend-style.css';
-        if (file_exists($css_path)) {
-            wp_enqueue_style(
-                'wp-live-chat-frontend',
-                WP_LIVE_CHAT_PLUGIN_URL . 'build/frontend-style.css',
-                [],
-                WP_LIVE_CHAT_VERSION
-            );
-        } else {
-            // Fallback به استایل داخلی
-            $this->add_inline_styles();
-        }
-        
         // انتقال داده‌ها به JavaScript
         wp_localize_script('wp-live-chat-frontend', 'wpLiveChat', [
             'ajaxurl' => admin_url('admin-ajax.php'),
@@ -111,13 +193,17 @@ class Frontend {
             'pusherKey' => get_option('wp_live_chat_pusher_key', ''),
             'pusherCluster' => get_option('wp_live_chat_pusher_cluster', 'mt1'),
             'sessionId' => $this->session_id,
-            'currentUser' => $this->get_current_user_data(),
+            'currentUser' => $this->user_data,
             'strings' => [
                 'typeMessage' => __('پیام خود را تایپ کنید...', 'wp-live-chat'),
                 'send' => __('ارسال', 'wp-live-chat'),
                 'online' => __('آنلاین', 'wp-live-chat'),
                 'offline' => __('آفلاین', 'wp-live-chat'),
-                'connecting' => __('در حال اتصال...', 'wp-live-chat')
+                'connecting' => __('در حال اتصال...', 'wp-live-chat'),
+                'welcome' => __('سلام! برای شروع چت، لطفاً اطلاعات خود را وارد کنید.', 'wp-live-chat'),
+                'phoneRequired' => __('شماره تلفن همراه الزامی است', 'wp-live-chat'),
+                'nameRequired' => __('نام الزامی است', 'wp-live-chat'),
+                'invalidPhone' => __('شماره تلفن معتبر نیست', 'wp-live-chat')
             ]
         ]);
     }
@@ -243,29 +329,37 @@ class Frontend {
     }
     
     private function get_current_user_data(): array {
-        $user_data = [
-            'id' => 0,
-            'name' => $this->generate_guest_name(),
-            'email' => '',
-            'is_logged_in' => false
-        ];
+        // ابتدا بررسی می‌کنیم آیا اطلاعات کاربر از قبل ذخیره شده است
+        $saved_data = $this->get_saved_user_data();
         
+        if ($saved_data) {
+            return $saved_data;
+        }
+        
+        // اگر کاربر لاگین باشد
         if (is_user_logged_in()) {
             $current_user = wp_get_current_user();
-            $user_data = [
+            return [
                 'id' => $current_user->ID,
                 'name' => $current_user->display_name ?: $current_user->user_login,
                 'email' => $current_user->user_email,
-                'is_logged_in' => true
+                'phone' => get_user_meta($current_user->ID, 'phone', true),
+                'company' => get_user_meta($current_user->ID, 'company', true),
+                'is_logged_in' => true,
+                'info_completed' => true
             ];
-            
-            // اگر نام کاربر خالی است، یک نام پیش‌فرض قرار دهید
-            if (empty($user_data['name'])) {
-                $user_data['name'] = 'کاربر ' . $current_user->ID;
-            }
         }
         
-        return $user_data;
+        // کاربر مهمان
+        return [
+            'id' => 0,
+            'name' => $this->generate_guest_name(),
+            'email' => '',
+            'phone' => '',
+            'company' => '',
+            'is_logged_in' => false,
+            'info_completed' => false
+        ];
     }
     
     private function should_display_chat(): bool {
@@ -283,7 +377,8 @@ class Frontend {
             return;
         }
         ?>
-            <div id="wp-live-chat-container" class="wp-live-chat-hidden position-bottom-left">            <div class="chat-widget">
+        <div id="wp-live-chat-container" class="wp-live-chat-hidden position-bottom-left">
+            <div class="chat-widget">
                 <div class="chat-header">
                     <div class="chat-title">
                         <h4><?php echo esc_html__('چت آنلاین', 'wp-live-chat'); ?></h4>
@@ -298,12 +393,49 @@ class Frontend {
                 </div>
                 
                 <div class="chat-messages">
+                    <!-- پیام خوش‌آمدگویی -->
                     <div class="welcome-message">
                         <p><?php echo esc_html__('سلام! چگونه می‌توانم کمک کنم؟', 'wp-live-chat'); ?></p>
                     </div>
                 </div>
                 
-                <div class="chat-input-area">
+                <!-- فرم دریافت اطلاعات کاربر -->
+                <div class="user-info-form" id="user-info-form" style="display: none;">
+                    <div class="form-header">
+                        <h5><?php echo esc_html__('اطلاعات تماس', 'wp-live-chat'); ?></h5>
+                        <p><?php echo esc_html__('لطفاً اطلاعات خود را وارد کنید تا بتوانیم با شما در ارتباط باشیم', 'wp-live-chat'); ?></p>
+                    </div>
+                    
+                    <form id="contact-info-form">
+                        <div class="form-group">
+                            <label for="user-phone"><?php echo esc_html__('شماره تلفن همراه', 'wp-live-chat'); ?> *</label>
+                            <input type="tel" id="user-phone" name="phone" required 
+                                   placeholder="09xxxxxxxxx" pattern="09[0-9]{9}">
+                            <span class="error-message" id="phone-error"></span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="user-name"><?php echo esc_html__('نام و نام خانوادگی', 'wp-live-chat'); ?> *</label>
+                            <input type="text" id="user-name" name="name" required 
+                                   placeholder="نام خود را وارد کنید">
+                            <span class="error-message" id="name-error"></span>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="user-company"><?php echo esc_html__('نام شرکت (اختیاری)', 'wp-live-chat'); ?></label>
+                            <input type="text" id="user-company" name="company" 
+                                   placeholder="نام شرکت یا سازمان">
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="submit-btn">
+                                <?php echo esc_html__('شروع گفتگو', 'wp-live-chat'); ?>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="chat-input-area" style="display: none;">
                     <textarea 
                         placeholder="<?php echo esc_attr__('پیام خود را تایپ کنید...', 'wp-live-chat'); ?>" 
                         rows="3" 
@@ -314,6 +446,26 @@ class Frontend {
                         <button class="send-button" disabled>
                             <?php echo esc_html__('ارسال', 'wp-live-chat'); ?>
                         </button>
+                    </div>
+                </div>
+
+                <!-- بخش راه‌های ارتباطی -->
+                <div class="salenoo-chat-alternatives">
+                    <small><?php echo esc_html__('راه‌های دیگر تماس:', 'wp-live-chat'); ?></small>
+                    <div class="salenoo-contact-buttons">
+                        <a class="salenoo-contact-btn salenoo-contact-wa" href="https://wa.me/message/IAP7KGPJ32HWP1" target="_blank" rel="noopener noreferrer">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M20.52 3.48C18.09 1.05 14.88 0 11.69 0 5.77 0 .98 4.79 .98 10.71c0 1.89.5 3.73 1.45 5.33L0 24l8.33-2.46c1.48.41 3.03.63 4.58.63 5.91 0 10.7-4.79 10.7-10.71 0-3.19-1.05-6.4-2.99-8.31z" fill="#25D366"/>
+                                <path d="M17.45 14.21c-.34-.17-2.02-.99-2.34-1.1-.32-.11-.55-.17-.78.17-.23.34-.9 1.1-1.1 1.33-.2.23-.39.26-.73.09-.34-.17-1.44-.53-2.74-1.68-1.01-.9-1.69-2.01-1.89-2.35-.2-.34-.02-.52.15-.69.15-.15.34-.39.51-.59.17-.2.23-.34.34-.56.11-.23 0-.43-.02-.6-.02-.17-.78-1.88-1.07-2.58-.28-.68-.57-.59-.78-.6-.2-.01-.43-.01-.66-.01-.23 0-.6.09-.92.43-.32.34-1.22 1.19-1.22 2.9 0 1.71 1.25 3.37 1.42 3.6.17.23 2.46 3.75 5.96 5.12 3.5 1.37 3.5.92 4.13.86.63-.05 2.02-.82 2.31-1.63.29-.8.29-1.49.2-1.63-.09-.15-.32-.23-.66-.4z" fill="#fff"/>
+                            </svg>
+                            <span><?php echo esc_html__('واتساپ', 'wp-live-chat'); ?></span>
+                        </a>
+                        <a class="salenoo-contact-btn salenoo-contact-call" href="tel:09124533878">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.86 19.86 0 0 1-3.07-8.63A2 2 0 0 1 4.09 2h3a2 2 0 0 1 2 1.72c.12.99.38 1.95.76 2.84a2 2 0 0 1-.45 2.11L8.91 10.91a16 16 0 0 0 6 6l1.24-1.24a2 2 0 0 1 2.11-.45c.89.38 1.85.64 2.84.76A2 2 0 0 1 22 16.92z" fill="#0066cc"/>
+                            </svg>
+                            <span><?php echo esc_html__('تماس', 'wp-live-chat'); ?></span>
+                        </a>
                     </div>
                 </div>
             </div>
