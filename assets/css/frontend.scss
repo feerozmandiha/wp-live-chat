@@ -686,7 +686,7 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     border-top: 1px solid $border-color;
     border-radius: 0 0 16px 16px;
     direction: rtl;
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     
     textarea {
