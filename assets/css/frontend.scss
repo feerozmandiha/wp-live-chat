@@ -394,13 +394,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     // موقعیت پیش‌فرض: پایین سمت چپ
     bottom: 30px;
     left: 30px;
-
-        // وقتی باز است - همه چیز فعال
-    &:not(.wp-live-chat-hidden) {
-        * {
-            pointer-events: auto;
-        }
-    }
     
     @include responsive(mobile) {
         bottom: 20px;
@@ -408,29 +401,15 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     }
     
     &.wp-live-chat-hidden {
-
-        * {
-            pointer-events: none;
-        }
-
         .chat-widget {
             transform: translateY(100px) translateX(-20px);
             opacity: 0;
             visibility: hidden;
-            pointer-events: none; // غیرفعال کردن تعامل
-
-        }
-
-        .chat-toggle,
-        .chat-toggle * {
-            pointer-events: auto;
         }
         
         .chat-toggle {
             transform: scale(1);
             opacity: 1;
-            pointer-events: auto; // فعال کردن تعامل برای toggle
-
         }
     }
     
@@ -439,28 +418,12 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
             transform: translateY(0) translateX(0);
             opacity: 1;
             visibility: visible;
-            pointer-events: auto; // فعال کردن تعامل
         }
         
         .chat-toggle {
             transform: scale(0);
             opacity: 0;
-            pointer-events: none; // غیرفعال کردن تعامل برای toggle
         }
-    }
-}
-
-// اضافه کردن استایل برای جلوگیری از تداخل
-.wp-live-chat-hidden {
-    // اطمینان از اینکه عناصر بسته شده با موس تداخل ندارند
-    * {
-        pointer-events: none !important;
-    }
-    
-    // فقط toggle باید فعال باشد
-    .chat-toggle,
-    .chat-toggle * {
-        pointer-events: auto !important;
     }
 }
 
@@ -520,7 +483,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     display: flex;
     flex-direction: column;
     @include transition;
-    pointer-events: auto; // وقتی باز است
     
     // برای موقعیت چپ، ویجت به سمت راست باز می‌شود
     margin-right: 0;
@@ -531,11 +493,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
         height: 70vh;
         border-radius: 12px;
         margin-left: 0;
-    }
-
-        // وقتی بسته است
-    .wp-live-chat-hidden & {
-        pointer-events: none; // غیرفعال کردن تعامل وقتی بسته است
     }
 }
 
@@ -729,6 +686,8 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     border-top: 1px solid $border-color;
     border-radius: 0 0 16px 16px;
     direction: rtl;
+    display: flex;
+    flex-direction: column;
     
     textarea {
         width: 100%;
@@ -813,7 +772,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     z-index: 999998;
     cursor: pointer;
     @include transition(all, 0.5s);
-    pointer-events: auto !important; // اطمینان از فعال بودن
     
     // موقعیت پیش‌فرض: پایین سمت چپ
     bottom: 30px;
@@ -835,7 +793,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
         color: white;
         box-shadow: $shadow;
         @include transition;
-        pointer-events: auto; // اطمینان از فعال بودن
         
         &:hover {
             transform: scale(1.1);
@@ -859,7 +816,6 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
         font-size: 11px;
         @include flex-center;
         animation: bounce 1s infinite;
-        pointer-events: none; // badge نباید با موس تداخل داشته باشد
         
         &:empty {
             display: none;
@@ -1038,6 +994,8 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     
     .chat-input-area {
         direction: ltr;
+        display: flex !important;
+        flex-direction: column;
         
         textarea {
             direction: ltr;
