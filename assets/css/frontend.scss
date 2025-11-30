@@ -405,6 +405,7 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
             transform: translateY(100px) translateX(-20px);
             opacity: 0;
             visibility: hidden;
+            display: none;
         }
         
         .chat-toggle {
@@ -490,7 +491,7 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
     
     @include responsive(mobile) {
         width: calc(100vw - 40px);
-        height: 70vh;
+        height: 90vh;
         border-radius: 12px;
         margin-left: 0;
     }
@@ -681,13 +682,14 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
 
 // Chat Input Area - RTL Optimized for Left Side
 .chat-input-area {
-    padding: 20px;
+    padding: 10px;
     background: white;
     border-top: 1px solid $border-color;
     border-radius: 0 0 16px 16px;
     direction: rtl;
     display: flex !important;
     flex-direction: column;
+    
     
     textarea {
         width: 100%;
@@ -1356,6 +1358,22 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
         justify-content: center;
         padding: 12px 16px;
     }
+
+    .salenoo-contact-wa {
+    background: var(--wp--preset--color--transparent);
+}
+
+    .salenoo-contact-wa span {
+        display: none;
+}
+    .salenoo-contact-call {
+    background: var(--wp--preset--color--transparent);
+}
+
+    .salenoo-contact-call span {
+        display: none;
+}
+
 }
 
 /* انیمیشن برای دکمه‌ها */
