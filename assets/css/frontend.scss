@@ -1348,7 +1348,7 @@ $shadow-light: 0 2px 10px rgba(0, 0, 0, 0.1);
 /* ریسپانسیو برای موبایل */
 @media (max-width: 767px) {
     .salenoo-contact-buttons {
-        flex-direction: column;
+        // flex-direction: column;
         gap: 8px;
     }
     
