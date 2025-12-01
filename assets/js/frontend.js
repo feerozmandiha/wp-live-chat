@@ -438,12 +438,34 @@
                 
                 console.log('✅ Chat opened successfully');
                 
-                // اگر اطلاعات کاربر کامل نیست، فرم را نمایش بده
-                if (!this.userInfoSubmitted && !this.infoFormShown) {
-                    console.log('📝 Showing user info form');
+                // 🔥 **اصلاح: بررسی واقعی وضعیت اطلاعات کاربر**
+                console.log('📊 User info check:', {
+                    userInfoSubmitted: this.userInfoSubmitted,
+                    currentUser: this.currentUser,
+                    info_completed: this.currentUser.info_completed
+                });
+                
+                // 🔥 **اصلاح: اگر اطلاعات کاربر کامل نیست یا فرم قبلاً نشان داده نشده، فرم را نمایش بده**
+                if (!this.userInfoSubmitted && 
+                    (!this.currentUser.info_completed || this.currentUser.info_completed === false) && 
+                    !this.infoFormShown) {
+                    
+                    console.log('📝 User info incomplete, showing form');
+                    
+                    // ابتدا اطمینان حاصل کنیم که عناصر فرم وجود دارند
+                    this.ensureFormElements();
+                    
+                    // پنهان کردن بخش چت
+                    this.hideChatInterface();
+                    
+                    // نمایش فرم اطلاعات کاربر
                     this.showUserInfoForm();
+                    
+                    // 🔥 **اضافه: ارسال پیام سیستم برای درخواست اطلاعات**
+                    this.requestUserInfoFromSystem();
+                    
                 } else {
-                    console.log('💬 Showing chat interface');
+                    console.log('💬 User info complete, showing chat interface');
                     this.showChatInterface();
                 }
                 
@@ -453,23 +475,92 @@
             }
         }
 
+        
+        // 🔥 **اضافه: متد جدید برای درخواست اطلاعات از سیستم**
+        requestUserInfoFromSystem() {
+            console.log('📨 Requesting user info from system...');
+            
+            // اگر هنوز اولین پیام ارسال نشده، سیستم پیام درخواست اطلاعات بفرستد
+            if (this.messageCount === 0 && this.userInfoSubmitted === false) {
+                console.log('📱 Sending system request for user info');
+                
+                // نمایش پیام سیستم
+                const systemMessage = {
+                    id: 'system_req_' + Date.now(),
+                    message: '📱 لطفاً شماره موبایل خود را وارد کنید تا بتوانیم با شما در ارتباط باشیم:',
+                    user_id: 0,
+                    user_name: 'سیستم',
+                    timestamp: new Date().toISOString(),
+                    type: 'system',
+                    requires_input: true,
+                    input_type: 'phone'
+                };
+                
+                this.handleSystemMessage(systemMessage);
+                this.displayMessage(systemMessage);
+            }
+        }
+
+
+        // 🔥 **اضافه: متد جدید برای اطمینان از وجود عناصر فرم**
+        ensureFormElements() {
+            console.log('🔍 Ensuring form elements exist...');
+            
+            // بررسی وجود فرم
+            if (!this.container.querySelector('#user-info-form')) {
+                console.error('❌ User info form not found in DOM!');
+                
+                // ایجاد فرم به صورت پویا اگر وجود ندارد
+                this.createUserInfoForm();
+            }
+            
+            // بررسی وجود عناصر فرم
+            this.userInfoForm = this.container.querySelector('#user-info-form');
+            this.contactInfoForm = this.container.querySelector('#contact-info-form');
+            this.chatInputArea = this.container.querySelector('.chat-input-area');
+            
+            console.log('📋 Form elements check:', {
+                userInfoForm: !!this.userInfoForm,
+                contactInfoForm: !!this.contactInfoForm,
+                chatInputArea: !!this.chatInputArea
+            });
+        }
+
+
         showUserInfoForm() {
             console.log('📝 Showing user info form');
             
-            // مخفی کردن بخش‌های دیگر
+            // پنهان کردن بخش چت
             this.hideChatInterface();
             
-            // نمایش فرم
+            // نمایش فرم اطلاعات کاربر
             const form = this.container.querySelector('#user-info-form');
             if (form) {
                 form.style.display = 'block';
                 this.infoFormShown = true;
+                
+                // پر کردن فرم با اطلاعات موجود
+                const nameInput = form.querySelector('#user-name');
+                const phoneInput = form.querySelector('#user-phone');
+                const companyInput = form.querySelector('#user-company');
+                
+                if (this.currentUser.name && nameInput) {
+                    nameInput.value = this.currentUser.name;
+                }
+                
+                if (this.currentUser.phone && phoneInput) {
+                    phoneInput.value = this.currentUser.phone;
+                }
+                
+                if (this.currentUser.company && companyInput) {
+                    companyInput.value = this.currentUser.company;
+                }
+            } else {
+                console.error('❌ User info form not found!');
             }
-            
-            // اضافه کردن event listener برای فرم
-            this.setupInfoForm();
         }
 
+        // اصلاح متد showChatInterface برای بارگذاری صحیح تاریخچه
         showChatInterface() {
             console.log('💬 Showing chat interface');
             
@@ -485,12 +576,14 @@
                 inputArea.style.display = 'block';
             }
             
-            // بارگذاری تاریخچه اگر اطلاعات کاربر کامل است
-            if (this.userInfoSubmitted && !this.messageHistoryLoaded) {
-                this.loadMessageHistory();
-            } else {
+            // 🔥 **اصلاح: همیشه تاریخچه را بارگذاری کن، حتی اگر قبلاً بارگذاری شده**
+            this.loadMessageHistory().then(() => {
+                console.log('✅ Message history loaded successfully');
                 this.scrollToBottom();
-            }
+            }).catch(error => {
+                console.error('❌ Error loading message history:', error);
+                this.scrollToBottom();
+            });
             
             if (this.textarea) {
                 setTimeout(() => {
@@ -576,18 +669,26 @@
             }
         }
 
-        // در متد submitUserInfo - اضافه کردن header برای UTF-8
+        // در متد submitUserInfo - اصلاح برای ذخیره‌سازی صحیح
         async submitUserInfo() {
+            console.log('📤 Submitting user info...');
+            
             const form = this.container.querySelector('#contact-info-form');
-            if (!form) return;
+            if (!form) {
+                console.error('❌ Contact info form not found!');
+                return;
+            }
 
             const formData = new FormData(form);
             const phone = formData.get('phone');
             const name = formData.get('name');
             const company = formData.get('company');
 
+            console.log('📋 Form data:', { phone, name, company });
+
             // اعتبارسنجی نهایی
             if (!this.validatePhone(phone) || !this.validateName(name)) {
+                console.log('❌ Form validation failed');
                 return;
             }
 
@@ -598,30 +699,40 @@
             }
 
             try {
+                // 🔥 **اصلاح: استفاده از action جدید برای ذخیره‌سازی اطلاعات**
                 const response = await $.ajax({
                     url: this.config.ajaxurl,
                     type: 'POST',
                     data: {
-                        action: 'save_user_info',
+                        action: 'save_user_info', // این action باید در PHP تعریف شود
                         nonce: this.config.nonce,
                         phone: phone,
                         name: name,
                         company: company,
                         session_id: this.sessionId
                     },
-                    dataType: 'json',
-                    contentType: 'application/x-www-form-urlencoded; charset=UTF-8', // اضافه کردن charset
-                    beforeSend: function(xhr) {
-                        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
-                    }
+                    dataType: 'json'
                 });
+
+                console.log('📤 Save user info response:', response);
 
                 if (response.success) {
                     console.log('✅ User info saved successfully');
                     
-                    // آپدیت اطلاعات کاربر
+                    // 🔥 **اصلاح: به‌روزرسانی صحیح وضعیت کاربر**
                     this.userInfoSubmitted = true;
-                    this.config.currentUser = response.data.user_data;
+                    this.currentUser = {
+                        ...this.currentUser,
+                        name: name,
+                        phone: phone,
+                        company: company,
+                        info_completed: true
+                    };
+                    
+                    // 🔥 **اصلاح: به‌روزرسانی config برای استفاده در پیام‌های بعدی**
+                    this.config.currentUser = this.currentUser;
+                    
+                    console.log('👤 Updated user data:', this.currentUser);
                     
                     // نمایش رابط چت
                     this.showChatInterface();
@@ -629,14 +740,17 @@
                     // نمایش پیام خوش‌آمدگویی
                     this.displayWelcomeMessage(name);
                     
+                    // 🔥 **ارسال پیام خوش‌آمدگویی به سرور**
+                    await this.sendWelcomeMessageToServer(name);
+                    
                 } else {
                     console.error('❌ Failed to save user info:', response.data);
-                    alert('خطا در ثبت اطلاعات: ' + response.data);
+                    this.showError('خطا در ثبت اطلاعات: ' + response.data);
                 }
 
             } catch (error) {
                 console.error('❌ Error saving user info:', error);
-                alert('خطا در ارتباط با سرور');
+                this.showError('خطا در ارتباط با سرور: ' + error.message);
             } finally {
                 if (submitBtn) {
                     submitBtn.disabled = false;
@@ -644,6 +758,27 @@
                 }
             }
         }
+
+      // 🔥 **اضافه: متد sendWelcomeMessageToServer**
+        async sendWelcomeMessageToServer(userName) {
+            try {
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'send_welcome_message',
+                        nonce: this.config.nonce,
+                        session_id: this.sessionId,
+                        user_name: userName
+                    },
+                    dataType: 'json'
+                });
+                
+                console.log('👋 Welcome message sent:', response);
+            } catch (error) {
+                console.error('❌ Error sending welcome message:', error);
+            }
+        }  
 
         displayWelcomeMessage(userName) {
             const welcomeMsg = `
@@ -718,13 +853,19 @@
             return isValid;
         }
 
-        // در متد sendMessage - اصلاح بخش ارسال پیام
+        // در متد sendMessage - اصلاح برای جلوگیری از نمایش دوگانه
         async sendMessage() {
-        // اگر در حال دریافت اطلاعات هستیم، به جای پیام عادی اطلاعات را ذخیره کنیم
-        if (this.isWaitingForInput && this.currentInputType) {
-            await this.handleUserInput();
-            return;
-        }
+            // 🔥 **اضافه: بررسی اگر در حال ارسال هستیم، از ارسال مجدد جلوگیری کنیم**
+            if (this.isSendingMessage) {
+                console.log('⏳ Message already being sent, please wait...');
+                return;
+            }
+            
+            // اگر در حال دریافت اطلاعات هستیم، به جای پیام عادی اطلاعات را ذخیره کنیم
+            if (this.isWaitingForInput && this.currentInputType) {
+                await this.handleUserInput();
+                return;
+            }
             
             if (!this.textarea) return;
             
@@ -735,10 +876,11 @@
                 return;
             }
 
-            // افزایش شمارنده پیام
+            // 🔥 **اضافه: علامت گذاری برای جلوگیری از ارسال همزمان**
+            this.isSendingMessage = true;
             this.messageCount++;
 
-            console.log('Sending message:', message);
+            console.log('📤 Sending message:', message);
 
             if (this.sendButton) {
                 this.sendButton.disabled = true;
@@ -746,80 +888,122 @@
             }
 
             try {
-                // 1. ابتدا پیام را محلی نمایش دهید (فوری)
+                // 🔥 **اصلاح: نمایش محلی پیام با flag مخصوص**
                 const tempMessageId = 'temp_' + Date.now();
-                this.displayMessage({
+                const localMessageData = {
                     id: tempMessageId,
                     message: message,
                     user_id: this.currentUser.id,
-                    user_name: this.currentUser.name,
+                    user_name: this.currentUser.name || 'کاربر',
                     timestamp: new Date().toISOString(),
                     type: 'user',
-                    isTemp: true // علامت گذاری پیام موقت
-                });
-
-                // 2. پاک کردن textarea (تجربه کاربری بهتر)
+                    isTemp: true,
+                    isLocal: true // 🔥 اضافه کردن flag برای تشخیص پیام محلی
+                };
+                
+                this.displayMessage(localMessageData, false); // عدم اسکرول فوری
+                
+                // پاک کردن textarea
                 this.textarea.value = '';
                 this.updateCharCounter();
                 this.validateInput();
 
-                console.log('✅ Message displayed locally');
+                console.log('✅ Message displayed locally (temp)');
 
-                // 3. ارسال به Pusher (بدون انتظار برای پاسخ سرور)
+                // ارسال به Pusher برای نمایش فوری در طرف دیگر
                 if (this.channel && this.isConnected) {
                     this.channel.trigger('client-message', {
-                        id: tempMessageId,
-                        message: message,
-                        user_id: this.currentUser.id,
-                        user_name: this.currentUser.name,
-                        session_id: this.sessionId,
-                        timestamp: new Date().toISOString(),
-                        type: 'user',
-                        isTemp: true
+                        ...localMessageData,
+                        isBroadcast: true // 🔥 علامت برای broadcast
                     });
-                    console.log('✅ Message sent via Pusher');
+                    console.log('✅ Message sent via Pusher (temp)');
                 }
 
-                // 4. ارسال به سرور در پس‌زمینه
-                try {
-                    const response = await $.ajax({
-                        url: this.config.ajaxurl,
-                        type: 'POST',
-                        data: {
-                            action: 'send_chat_message',
-                            nonce: this.config.nonce,
-                            message: message,
-                            user_id: this.currentUser.id,
-                            user_name: this.currentUser.name,
-                            session_id: this.sessionId
-                        },
-                        dataType: 'json',
-                        timeout: 5000
-                    });
+                // ارسال به سرور برای ذخیره دائمی
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'send_chat_message',
+                        nonce: this.config.nonce,
+                        message: message,
+                        user_id: this.currentUser.id,
+                        user_name: this.currentUser.name || 'کاربر',
+                        session_id: this.sessionId
+                    },
+                    dataType: 'json',
+                    timeout: 5000
+                });
 
-                    if (response.success) {
-                        console.log('✅ Message saved to database');
-                        // حذف پیام موقت و جایگزینی با پیام اصلی
-                        this.replaceTempMessage(tempMessageId, response.data.message_id);
-                    }
-                } catch (dbError) {
-                    console.warn('⚠️ Database save failed:', dbError);
-                    // در صورت خطا، پیام موقت را به عنوان دائمی علامت‌گذاری کنید
-                    this.markMessageAsPermanent(tempMessageId);
+                console.log('📤 Server response:', response);
+
+                if (response.success) {
+                    console.log('✅ Message saved to database');
+                    
+                    // 🔥 **اصلاح: آپدیت پیام موقت با ID واقعی**
+                    this.updateTempMessage(tempMessageId, response.data.message_id);
+                    
+                } else {
+                    console.error('❌ Server error:', response.data);
+                    // در صورت خطا، پیام موقت را علامت‌گذاری کنیم
+                    this.markTempMessageAsFailed(tempMessageId);
                 }
 
             } catch (error) {
                 console.error('❌ Send message error:', error);
-                this.showError('خطا در ارسال پیام');
+                this.markTempMessageAsFailed(tempMessageId);
             } finally {
+                // 🔥 **اصلاح: بازنشانی flag ارسال**
+                this.isSendingMessage = false;
+                
                 if (this.sendButton) {
                     this.sendButton.disabled = false;
                     this.sendButton.textContent = this.config.strings.send;
                     this.validateInput();
                 }
+                
+                // اسکرول به پایین بعد از اتمام
+                this.scrollToBottom();
             }
         }
 
+        // 🔥 **اضافه: متد جدید برای علامت‌گذاری پیام موقت به عنوان ناموفق**
+        markTempMessageAsFailed(tempId) {
+            const messageElement = this.messagesContainer.querySelector(`[data-message-id="${tempId}"]`);
+            if (messageElement) {
+                messageElement.classList.add('failed-message');
+                
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'message-status failed';
+                statusDiv.textContent = '⚠️';
+                statusDiv.title = 'ارسال ناموفق - لطفا دوباره تلاش کنید';
+                messageElement.appendChild(statusDiv);
+                
+                console.log('⚠️ Temp message marked as failed:', tempId);
+            }
+        }
+
+            // 🔥 **اضافه: متد جدید برای آپدیت پیام موقت**
+        updateTempMessage(tempId, realId) {
+            const messageElement = this.messagesContainer.querySelector(`[data-message-id="${tempId}"]`);
+            if (messageElement) {
+                // آپدیت ID
+                messageElement.dataset.messageId = realId;
+                
+                // حذف کلاس temp
+                messageElement.classList.remove('temp-message');
+                
+                // اضافه کردن علامت تحویل
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'message-status delivered';
+                statusDiv.textContent = '✓✓';
+                messageElement.appendChild(statusDiv);
+                
+                console.log('✅ Temp message updated with real ID:', realId);
+            }
+        }
+
+        // 🔥 **اصلاح: متد handleUserInput به async**
         async handleUserInput() {
             if (!this.textarea) return;
             
@@ -872,33 +1056,41 @@
             }
         }
 
-        async saveUserName(name) {
-            return await $.ajax({
-                url: this.config.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'save_user_name',
-                    nonce: this.config.nonce,
-                    name: name,
-                    session_id: this.sessionId
-                },
-                dataType: 'json'
+        saveUserName(name) {
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'save_user_name',
+                        nonce: this.config.nonce,
+                        name: name,
+                        session_id: this.sessionId
+                    },
+                    dataType: 'json'
+                })
+                .done(resolve)
+                .fail(reject);
             });
-        }       
+        }
 
-        async savePhoneNumber(phone) {
-            return await $.ajax({
-                url: this.config.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'save_user_phone',
-                    nonce: this.config.nonce,
-                    phone: phone,
-                    session_id: this.sessionId
-                },
-                dataType: 'json'
+        savePhoneNumber(phone) {
+            return new Promise((resolve, reject) => {
+                $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'save_user_phone',
+                        nonce: this.config.nonce,
+                        phone: phone,
+                        session_id: this.sessionId
+                    },
+                    dataType: 'json'
+                })
+                .done(resolve)
+                .fail(reject);
             });
-        }        
+        }
 
 
         displayUserInputMessage(inputValue) {
@@ -940,11 +1132,20 @@
             }
         }
 
-        displayMessage(messageData, shouldScroll = true) { // مقدار پیش‌فرض اضافه شد
+        displayMessage(messageData, shouldScroll = true) {
             if (!this.messagesContainer) return;
+            
+            // 🔥 **اصلاح: بررسی تکراری بودن قبل از نمایش**
+            if (this.isDuplicateMessage(messageData.id)) {
+                console.log('⚠️ Duplicate message, not displaying:', messageData.id);
+                return;
+            }
             
             const messageEl = this.createMessageElement(messageData);
             this.messagesContainer.appendChild(messageEl);
+            
+            // ذخیره ID پیام
+            this.saveMessageId(messageData.id);
             
             if (shouldScroll) {
                 this.scrollToBottom();
@@ -954,9 +1155,18 @@
         createMessageElement(messageData) {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${messageData.type}-message`;
+            
+            // 🔥 **اضافه: کلاس‌های اضافی بر اساس نوع پیام**
             if (messageData.isTemp) {
                 messageDiv.classList.add('temp-message');
             }
+            if (messageData.isLocal) {
+                messageDiv.classList.add('local-message');
+            }
+            if (messageData.isFromHistory) {
+                messageDiv.classList.add('history-message');
+            }
+            
             messageDiv.dataset.messageId = messageData.id;
 
             const time = new Date(messageData.timestamp).toLocaleTimeString('fa-IR', {
@@ -980,32 +1190,107 @@
                 <div class="message-content">
                     <p>${this.escapeHtml(messageData.message)}</p>
                 </div>
-                ${messageData.type === 'user' ? '<div class="message-status delivered">✓✓</div>' : ''}
             `;
+
+            // اضافه کردن وضعیت تحویل برای پیام‌های کاربر
+            if (messageData.type === 'user' && !messageData.isTemp) {
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'message-status delivered';
+                statusDiv.textContent = '✓✓';
+                messageDiv.appendChild(statusDiv);
+            }
 
             return messageDiv;
         }
 
         handleIncomingMessage(data) {
-            // اگر پیام از خود کاربر است و موقت است، نمایش نده
-            if (data.type === 'user' && data.isTemp) {
-                console.log('📨 Ignoring duplicate user message:', data.id);
+            console.log('📨 New message received:', data);
+            
+            // 🔥 **اصلاح: بررسی جامع تکراری بودن**
+            if (this.isDuplicateMessage(data.id)) {
+                console.log('⚠️ Duplicate message detected, ignoring:', data.id);
                 return;
             }
             
-            // اگر پیام سیستمی است که نیاز به ورودی دارد
+            // 🔥 **اصلاح: نادیده گرفتن پیام‌های broadcast از خود کاربر**
+            if (data.type === 'user' && data.isBroadcast && data.user_id === this.currentUser.id) {
+                console.log('📨 Ignoring self-broadcast message:', data.id);
+                return;
+            }
+            
+            // اگر پیام از خود کاربر است و موقت است
+            if (data.type === 'user' && data.isTemp && data.user_id === this.currentUser.id) {
+                console.log('📨 Ignoring own temp message:', data.id);
+                return;
+            }
+            
+            // اگر پیام سیستم است که نیاز به ورودی دارد
             if (data.type === 'system' && data.requires_input) {
+                console.log('🔧 System message requires input:', data.input_type);
                 this.handleSystemMessage(data);
             }
             
+            // نمایش پیام
             this.displayMessage(data);
             
+            // ذخیره ID پیام
+            this.saveMessageId(data.id);
+            
+            // اعلان برای پیام‌های جدید وقتی چت بسته است
             if (!this.isOpen) {
                 this.unreadCount++;
                 this.updateNotificationBadge();
-                
                 this.showDesktopNotification(data);
             }
+        }
+
+        
+        // 🔥 **اضافه: متد جدید برای ذخیره ID پیام**
+        saveMessageId(messageId) {
+            const key = `wp_live_chat_msg_${messageId}`;
+            localStorage.setItem(key, '1');
+            
+            // پاک کردن پیام‌های قدیمی از localStorage (حفظ 100 پیام اخیر)
+            this.cleanupMessageIds();
+        }
+
+        // 🔥 **اضافه: متد جدید برای پاکسازی IDهای قدیمی**
+        cleanupMessageIds() {
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && key.startsWith('wp_live_chat_msg_')) {
+                    keys.push(key);
+                }
+            }
+            
+            // اگر بیشتر از 100 پیام داریم، قدیمی‌ها را پاک کن
+            if (keys.length > 100) {
+                keys.sort().slice(0, keys.length - 100).forEach(key => {
+                    localStorage.removeItem(key);
+                });
+            }
+        }
+
+        // 🔥 **اضافه: متد جدید برای بررسی تکراری بودن پیام**
+        isDuplicateMessage(messageId) {
+            // بررسی در localStorage برای جلوگیری از نمایش تکراری
+            const key = `wp_live_chat_msg_${messageId}`;
+            const seen = localStorage.getItem(key);
+            
+            if (seen) {
+                return true;
+            }
+            
+            // بررسی در DOM
+            if (this.messagesContainer) {
+                const existing = this.messagesContainer.querySelector(`[data-message-id="${messageId}"]`);
+                if (existing) {
+                    return true;
+                }
+            }
+            
+            return false;
         }
 
         showTypingIndicator(data) {
@@ -1035,67 +1320,122 @@
             this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
         }
 
-        async loadMessageHistory() {
+        // 🔥 **اصلاح: متد loadMessageHistory برای کارکرد بهتر**
+        loadMessageHistory() {
+            // اگر در حال بارگذاری هستیم، منتظر بمان
+            if (this.messageHistoryLoading) {
+                console.log('⏳ Message history is already loading...');
+                return Promise.resolve();
+            }
+            
             console.log('📚 Loading message history for session:', this.sessionId);
             
-            try {
-                const response = await $.ajax({
+            this.messageHistoryLoading = true;
+            
+            return new Promise((resolve, reject) => {
+                $.ajax({
                     url: this.config.ajaxurl,
                     type: 'POST',
                     data: {
                         action: 'get_chat_history',
                         nonce: this.config.nonce,
-                        session_id: this.sessionId
+                        session_id: this.sessionId,
+                        force_reload: true // 🔥 اضافه کردن پارامتر برای اجباری کردن بارگذاری
                     },
                     dataType: 'json',
                     timeout: 10000
+                })
+                .done((response) => {
+                    console.log('📚 History API Response:', response);
+
+                    if (response.success && response.data && Array.isArray(response.data)) {
+                        console.log('📜 Found messages in history:', response.data.length);
+                        
+                        // 🔥 **اصلاح: پاکسازی و نمایش تاریخچه جدید**
+                        this.renderMessageHistory(response.data);
+                        
+                        this.messageHistoryLoaded = true;
+                        console.log('✅ Message history loaded successfully');
+                        resolve(response.data);
+                    } else {
+                        console.warn('⚠️ No message history found');
+                        this.messageHistoryLoaded = true;
+                        resolve([]);
+                    }
+                })
+                .fail((error) => {
+                    console.error('❌ Error loading message history:', error);
+                    this.messageHistoryLoaded = true;
+                    reject(error);
+                })
+                .always(() => {
+                    this.messageHistoryLoading = false;
                 });
+            });
+        }
 
-                console.log('📚 History API Response:', response);
-
-                if (response.success && response.data && Array.isArray(response.data)) {
-                    console.log('📜 Raw messages data:', response.data);
-                    this.renderMessageHistory(response.data);
-                    this.messageHistoryLoaded = true;
-                    console.log('✅ Message history loaded:', response.data.length);
-                } else {
-                    console.warn('⚠️ No message history found or invalid data');
-                    this.messageHistoryLoaded = true;
-                }
-            } catch (error) {
-                console.error('❌ Error loading message history:', error);
-                this.messageHistoryLoaded = true;
-            }
+        // 🔥 **اضافه: متد جدید برای پاک کردن پیام‌های موجود**
+        clearExistingMessages() {
+            if (!this.messagesContainer) return;
+            
+            // پاک کردن همه پیام‌ها به جز پیام خوش‌آمدگویی
+            const messages = this.messagesContainer.querySelectorAll('.message:not(.welcome-message)');
+            messages.forEach(message => {
+                message.remove();
+            });
+            
+            console.log(`🧹 Cleared ${messages.length} existing messages`);
         }
 
         renderMessageHistory(messages) {
-            if (!this.messagesContainer || !messages || messages.length === 0) {
+            if (!this.messagesContainer) {
+                console.error('❌ Messages container not found');
                 return;
             }
 
             console.log('🎨 Rendering message history:', messages.length);
 
-            // پاک کردن پیام خوش‌آمدگویی
-            const welcomeMessage = this.messagesContainer.querySelector('.welcome-message');
-            if (welcomeMessage) {
-                welcomeMessage.remove();
+            // 🔥 **اصلاح: پاک کردن فقط پیام‌های غیرسیستم و غیرموقت**
+            const messagesToRemove = this.messagesContainer.querySelectorAll(
+                '.message:not(.system-message):not(.welcome-message)'
+            );
+            
+            messagesToRemove.forEach(message => {
+                // فقط پیام‌هایی که local نیستند را پاک کن
+                if (!message.classList.contains('local-message')) {
+                    message.remove();
+                }
+            });
+
+            console.log(`🧹 Cleared ${messagesToRemove.length} old messages`);
+
+            // اگر پیامی برای نمایش وجود ندارد
+            if (!messages || messages.length === 0) {
+                console.log('📭 No messages to display from history');
+                return;
             }
 
             // نمایش تاریخچه پیام‌ها
             messages.forEach(message => {
-                this.displayMessage({
-                    id: message.id,
-                    message: message.message_content,
-                    user_id: message.user_id,
-                    user_name: message.user_name,
-                    timestamp: message.created_at,
-                    type: message.message_type
-                }, false); // اضافه کردن پارامتر false برای عدم اسکرول
+                // 🔥 **اصلاح: بررسی تکراری نبودن پیام**
+                if (!this.isDuplicateMessage(message.id)) {
+                    this.displayMessage({
+                        id: message.id,
+                        message: message.message_content,
+                        user_id: message.user_id,
+                        user_name: message.user_name,
+                        timestamp: message.created_at,
+                        type: message.message_type,
+                        isFromHistory: true // 🔥 علامت برای پیام تاریخچه
+                    }, false);
+                }
             });
 
-            // در انتها یک بار اسکرول به پایین
+            // اسکرول به پایین
             this.scrollToBottom();
-        }   
+            
+            console.log(`✅ Rendered ${messages.length} messages from history`);
+        }
 
         showError(message) {
             if (!this.messagesContainer) return;

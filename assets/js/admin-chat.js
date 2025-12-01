@@ -13,10 +13,25 @@
             this.init();
         }
 
-        init() {
+        // 🔥 **اصلاح: تبدیل متد init به async**
+        async init() {
             this.bindEvents();
-            this.loadSessions();
+            await this.loadSessions(); // حالا می‌تواند await داشته باشد
             this.initPusher();
+            
+            // 🔥 **اصلاح: درخواست مجوز نوتیفیکیشن بدون await مشکل‌ساز**
+            this.requestNotificationPermission();
+        }
+
+        // 🔥 **اضافه: متد جداگانه برای درخواست مجوز نوتیفیکیشن**
+        requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission().then(permission => {
+                    console.log('Notification permission:', permission);
+                }).catch(error => {
+                    console.error('Error requesting notification permission:', error);
+                });
+            }
         }
 
         bindEvents() {
@@ -31,11 +46,12 @@
             });
         }
 
-        async loadSessions() {
+        // 🔥 **اصلاح: متد loadSessions با استفاده از Promise**
+        loadSessions() {
             console.log('📋 Loading sessions...');
             
-            try {
-                const response = await $.ajax({
+            return new Promise((resolve, reject) => {
+                $.ajax({
                     url: this.config.ajaxurl,
                     type: 'POST',
                     data: {
@@ -44,37 +60,41 @@
                     },
                     dataType: 'json',
                     timeout: 10000
-                });
+                })
+                .done((response) => {
+                    console.log('📡 API Response:', response);
 
-                console.log('📡 API Response:', response);
-
-                if (response.success) {
-                    this.sessions = response.data;
-                    this.renderSessions();
-                    console.log('✅ Sessions loaded:', this.sessions.length);
-                } else {
-                    console.error('❌ API Error:', response.data);
-                    this.showError('خطا در بارگذاری گفتگوها: ' + (response.data || 'خطای ناشناخته'));
-                }
-            } catch (error) {
-                console.error('❌ Network Error:', error);
-                
-                // بررسی اگر responseText شامل HTML خطا باشد
-                if (error.responseText && error.responseText.includes('wpdberror')) {
-                    this.showError('خطای دیتابیس - لطفا جداول چت را بررسی کنید');
-                    console.error('📋 Database error in response:', error.responseText);
-                } else {
-                    let errorMessage = 'خطا در ارتباط با سرور';
-                    if (error.status === 500) {
-                        errorMessage = 'خطای سرور (500) - لطفا error_log را بررسی کنید';
-                    } else if (error.status === 403) {
-                        errorMessage = 'دسترسی غیرمجاز';
-                    } else if (error.statusText) {
-                        errorMessage += ': ' + error.statusText;
+                    if (response.success) {
+                        this.sessions = response.data;
+                        this.renderSessions();
+                        console.log('✅ Sessions loaded:', this.sessions.length);
+                        resolve(response.data);
+                    } else {
+                        console.error('❌ API Error:', response.data);
+                        this.showError('خطا در بارگذاری گفتگوها: ' + (response.data || 'خطای ناشناخته'));
+                        reject(response.data);
                     }
-                    this.showError(errorMessage);
-                }
-            }
+                })
+                .fail((error) => {
+                    console.error('❌ Network Error:', error);
+                    
+                    if (error.responseText && error.responseText.includes('wpdberror')) {
+                        this.showError('خطای دیتابیس - لطفا جداول چت را بررسی کنید');
+                        console.error('📋 Database error in response:', error.responseText);
+                    } else {
+                        let errorMessage = 'خطا در ارتباط با سرور';
+                        if (error.status === 500) {
+                            errorMessage = 'خطای سرور (500) - لطفا error_log را بررسی کنید';
+                        } else if (error.status === 403) {
+                            errorMessage = 'دسترسی غیرمجاز';
+                        } else if (error.statusText) {
+                            errorMessage += ': ' + error.statusText;
+                        }
+                        this.showError(errorMessage);
+                    }
+                    reject(error);
+                });
+            });
         }
 
         renderSessions() {
@@ -122,6 +142,7 @@
             });
         }
 
+        // 🔥 **اصلاح: متد selectSession به async**
         async selectSession(session) {
             console.log('🎯 Selecting session:', session);
             
@@ -132,8 +153,8 @@
             
             $('#current-session-name').text(session.user_name || 'کاربر ناشناس');
             $('#session-status').text(session.status === 'active' ? 'آنلاین' : 'آفلاین')
-                              .removeClass('status-offline status-online')
-                              .addClass(session.status === 'active' ? 'status-online' : 'status-offline');
+                            .removeClass('status-offline status-online')
+                            .addClass(session.status === 'active' ? 'status-online' : 'status-offline');
             
             $('#admin-message-input').prop('disabled', false);
             $('#admin-send-button').prop('disabled', false);
@@ -142,11 +163,11 @@
             this.subscribeToSession(session.session_id);
         }
 
-        async loadSessionMessages(sessionId) {
+        loadSessionMessages(sessionId) {
             console.log('📨 Loading messages for session:', sessionId);
             
-            try {
-                const response = await $.ajax({
+            return new Promise((resolve, reject) => {
+                $.ajax({
                     url: this.config.ajaxurl,
                     type: 'POST',
                     data: {
@@ -156,26 +177,31 @@
                     },
                     dataType: 'json',
                     timeout: 10000
+                })
+                .done((response) => {
+                    console.log('📨 Messages API Response:', response);
+
+                    if (response.success) {
+                        this.renderMessages(response.data);
+                        console.log('✅ Messages loaded:', response.data.length);
+                        resolve(response.data);
+                    } else {
+                        console.error('❌ API Error:', response.data);
+                        this.showError('خطا در بارگذاری پیام‌ها: ' + response.data);
+                        reject(response.data);
+                    }
+                })
+                .fail((error) => {
+                    console.error('❌ Network Error:', error);
+                    
+                    if (error.responseText && error.responseText.includes('wpdberror')) {
+                        this.showError('خطای دیتابیس در بارگذاری پیام‌ها');
+                    } else {
+                        this.showError('خطا در بارگذاری پیام‌ها: ' + error.statusText);
+                    }
+                    reject(error);
                 });
-
-                console.log('📨 Messages API Response:', response);
-
-                if (response.success) {
-                    this.renderMessages(response.data);
-                    console.log('✅ Messages loaded:', response.data.length);
-                } else {
-                    console.error('❌ API Error:', response.data);
-                    this.showError('خطا در بارگذاری پیام‌ها: ' + response.data);
-                }
-            } catch (error) {
-                console.error('❌ Network Error:', error);
-                
-                if (error.responseText && error.responseText.includes('wpdberror')) {
-                    this.showError('خطای دیتابیس در بارگذاری پیام‌ها');
-                } else {
-                    this.showError('خطا در بارگذاری پیام‌ها: ' + error.statusText);
-                }
-            }
+            });
         }
 
         renderMessages(messages) {
@@ -211,6 +237,7 @@
             container.scrollTop(container[0].scrollHeight);
         }
 
+        // 🔥 **اصلاح: متد sendMessage به async**
         async sendMessage() {
             const messageInput = $('#admin-message-input');
             const message = messageInput.val().trim();
@@ -344,6 +371,82 @@
                 
                 // غیرفعال کردن قابلیت real-time به صورت موقت
                 this.showError('اتصال real-time غیرفعال شد. چت به صورت عادی کار می‌کند.');
+            }
+
+             // 🔥 **اضافه: شنود کانال ادمین برای پیام‌های جدید کاربران**
+            this.adminChannel = this.pusher.subscribe('admin-chat-channel');
+            
+            this.adminChannel.bind('new-user-message', (data) => {
+                console.log('🔔 New user message received:', data);
+                
+                // اگر session مربوطه در حال نمایش است، پیام‌ها را رفرش کن
+                if (this.currentSession && this.currentSession.session_id === data.session_id) {
+                    this.loadSessionMessages(data.session_id);
+                }
+                
+                    // اضافه کردن این بخش برای جلوگیری از بارگذاری مجدد پیام‌ها
+                this.receivedMessageIds = new Set();
+                // آپدیت لیست sessions
+                this.loadSessions();
+                
+                // نمایش نوتیفیکیشن
+                this.showNewMessageNotification(data);
+            });
+        }
+
+        // 🔥 **اصلاح: بخش handle message در ادمین**
+        handleNewMessage(data) {
+            console.log('📨 New message in admin:', data);
+            
+            // بررسی تکراری نبودن
+            if (this.isMessageDuplicate(data.message_id)) {
+                console.log('⚠️ Duplicate message in admin, ignoring:', data.message_id);
+                return;
+            }
+            
+            // فقط اگر session مربوطه در حال نمایش است، رفرش کن
+            if (this.currentSession && this.currentSession.session_id === data.session_id) {
+                console.log('🔄 Refreshing messages for current session');
+                this.loadSessionMessages(data.session_id);
+            }
+            
+            // آپدیت لیست sessions
+            this.loadSessions();
+        }
+
+        // 🔥 **اضافه: متد جدید برای بررسی تکراری بودن پیام در ادمین**
+        isMessageDuplicate(messageId) {
+            if (this.receivedMessageIds.has(messageId)) {
+                return true;
+            }
+            
+            // ذخیره ID پیام
+            this.receivedMessageIds.add(messageId);
+            
+            // حفظ حداکثر 1000 ID
+            if (this.receivedMessageIds.size > 1000) {
+                const firstId = this.receivedMessageIds.values().next().value;
+                this.receivedMessageIds.delete(firstId);
+            }
+            
+            return false;
+        }
+
+        showNewMessageNotification(data) {
+            if (!this.currentSession || this.currentSession.session_id !== data.session_id) {
+                // نمایش نوتیفیکیشن برای sessionهای دیگر
+                const notification = new Notification('پیام جدید از ' + data.user_name, {
+                    body: data.message,
+                    icon: '/wp-content/plugins/wp-live-chat/assets/images/icon.png'
+                });
+                
+                notification.onclick = () => {
+                    // انتخاب session مربوطه هنگام کلیک روی نوتیفیکیشن
+                    const targetSession = this.sessions.find(s => s.session_id === data.session_id);
+                    if (targetSession) {
+                        this.selectSession(targetSession);
+                    }
+                };
             }
         }
 

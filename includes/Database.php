@@ -110,26 +110,65 @@ class Database {
         
         $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
         
-        $result = $wpdb->update(
-            $table_name,
-            [
-                'user_name' => $user_name,
-                'user_email' => $phone, // استفاده از شماره تلفن به عنوان ایمیل
-                'user_phone' => $phone,
-                'user_company' => $company,
-                'last_activity' => current_time('mysql')
-            ],
-            ['session_id' => $session_id],
-            ['%s', '%s', '%s', '%s', '%s'],
-            ['%s']
-        );
+        // 🔥 **اصلاح: بررسی وجود session**
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table_name WHERE session_id = %s",
+            $session_id
+        ));
         
-        if ($result) {
-            error_log("WP Live Chat: User info updated for session {$session_id} - Name: {$user_name}, Phone: {$phone}");
-            return true;
+        if (!$existing) {
+            // اگر session وجود ندارد، ایجاد کن
+            error_log("📝 Session {$session_id} does not exist, creating new session");
+            
+            $result = $wpdb->insert(
+                $table_name,
+                [
+                    'session_id' => $session_id,
+                    'user_id' => 0,
+                    'user_name' => $user_name,
+                    'user_email' => $phone . '@chat.user',
+                    'user_phone' => $phone,
+                    'user_company' => $company,
+                    'user_ip' => $this->get_user_ip(),
+                    'user_agent' => $this->get_user_agent(),
+                    'status' => 'active',
+                    'unread_count' => 0,
+                    'last_activity' => current_time('mysql'),
+                    'created_at' => current_time('mysql')
+                ],
+                ['%s', '%d', '%s', '%s', '%s', '%s', '%s', '%s', '%s', '%d', '%s', '%s']
+            );
+            
+            if ($result) {
+                error_log("✅ New session created with user info for session {$session_id}");
+                return true;
+            } else {
+                error_log("❌ Failed to create session: {$wpdb->last_error}");
+                return false;
+            }
         } else {
-            error_log("WP Live Chat: Failed to update user info for session {$session_id}");
-            return false;
+            // آپدیت session موجود
+            $result = $wpdb->update(
+                $table_name,
+                [
+                    'user_name' => $user_name,
+                    'user_email' => $phone . '@chat.user',
+                    'user_phone' => $phone,
+                    'user_company' => $company,
+                    'last_activity' => current_time('mysql')
+                ],
+                ['session_id' => $session_id],
+                ['%s', '%s', '%s', '%s', '%s'],
+                ['%s']
+            );
+            
+            if ($result) {
+                error_log("✅ User info updated for session {$session_id} - Name: {$user_name}, Phone: {$phone}");
+                return true;
+            } else {
+                error_log("❌ Failed to update user info for session {$session_id}");
+                return false;
+            }
         }
     }
     // اضافه کردن این متد برای ایجاد session هنگام اولین پیام
@@ -341,10 +380,13 @@ class Database {
                 return 0;
             }
             
+            // 🔥 **اصلاح: شمارش تمام پیام‌های کاربر (نه فقط نوع user)**
             $count = (int) $wpdb->get_var($wpdb->prepare(
-                "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %s AND message_type = 'user'",
+                "SELECT COUNT(*) FROM {$table_name} WHERE session_id = %s",
                 $session_id
             ));
+            
+            error_log("📨 Session {$session_id} has {$count} total messages");
             
             return $count;
             

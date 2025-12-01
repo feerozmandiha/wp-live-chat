@@ -142,6 +142,7 @@ class Chat_Admin {
             padding: 15px;
             overflow-y: auto;
             background: white;
+            max-height: 45vh;
         }
         
         .chat-input-admin {
