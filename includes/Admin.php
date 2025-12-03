@@ -1,9 +1,5 @@
 <?php
-
 namespace WP_Live_Chat;
-
-use Exception; // این خط را اضافه کنید
-
 
 class Admin {
     
@@ -12,8 +8,6 @@ class Admin {
         add_action('admin_init', [$this, 'register_settings']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_admin_scripts']);
         add_action('wp_ajax_test_pusher_connection', [$this, 'test_pusher_connection']);
-        add_action('wp_ajax_clear_chat_logs', [$this, 'clear_chat_logs']);
-        add_action('wp_ajax_download_chat_logs', [$this, 'download_chat_logs']);
     }
     
     public function add_admin_menu(): void {
@@ -21,13 +15,12 @@ class Admin {
             __('تنظیمات چت آنلاین', 'wp-live-chat'),
             __('چت آنلاین', 'wp-live-chat'),
             'manage_options',
-            'wp-live-chat',
-            [$this, 'render_admin_page']
+            'wp-live-chat-settings',
+            [$this, 'render_settings_page']
         );
     }
     
     public function register_settings(): void {
-        // تنظیمات عمومی
         register_setting('wp_live_chat_settings', 'wp_live_chat_pusher_app_id', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_text_field',
@@ -60,43 +53,31 @@ class Admin {
         register_setting('wp_live_chat_settings', 'wp_live_chat_offline_message', [
             'type' => 'string',
             'sanitize_callback' => 'sanitize_textarea_field',
-            'default' => __('در حال حاضر آنلاین نیستیم. لطفاً پیام خود را بگذارید.', 'wp-live-chat')
+            'default' => __('در حال حاضر آنلاین نیستیم. پیام خود را بگذارید تا با شما تماس بگیریم.', 'wp-live-chat')
         ]);
 
-        // تنظیمات پیشرفته
-        register_setting('wp_live_chat_advanced_settings', 'wp_live_chat_cache_enabled', [
+        // اضافه کردن به تابع register_settings
+        register_setting('wp_live_chat_settings', 'wp_live_chat_debug_mode', [
             'type' => 'boolean',
-            'default' => true
-        ]);
-        
-        register_setting('wp_live_chat_advanced_settings', 'wp_live_chat_auto_cleanup', [
-            'type' => 'integer',
-            'sanitize_callback' => 'absint',
-            'default' => 30
-        ]);
-        
-        register_setting('wp_live_chat_advanced_settings', 'wp_live_chat_max_message_length', [
-            'type' => 'integer',
-            'sanitize_callback' => 'absint',
-            'default' => 500
+            'default' => false
         ]);
     }
     
     public function enqueue_admin_scripts(string $hook): void {
-        if ('settings_page_wp-live-chat' !== $hook) {
+        if ('settings_page_wp-live-chat-settings' !== $hook) {
             return;
         }
         
         wp_enqueue_style(
             'wp-live-chat-admin',
-            WP_LIVE_CHAT_PLUGIN_URL . 'assets/css/admin.css',
+            WP_LIVE_CHAT_PLUGIN_URL . 'build/css/admin-style.css',
             [],
             WP_LIVE_CHAT_VERSION
         );
         
         wp_enqueue_script(
             'wp-live-chat-admin',
-            WP_LIVE_CHAT_PLUGIN_URL . 'assets/js/admin.js',
+            WP_LIVE_CHAT_PLUGIN_URL . 'build/js/admin.js',
             ['jquery'],
             WP_LIVE_CHAT_VERSION,
             true
@@ -105,409 +86,279 @@ class Admin {
         wp_localize_script('wp-live-chat-admin', 'wpLiveChatAdmin', [
             'ajaxurl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('wp_live_chat_admin_nonce'),
-            'testing' => __('در حال تست اتصال...', 'wp-live-chat'),
-            'success' => __('اتصال موفقیت‌آمیز بود!', 'wp-live-chat'),
-            'error' => __('اتصال ناموفق بود. لطفاً تنظیمات را بررسی کنید.', 'wp-live-chat')
+            'strings' => [
+                'testing' => __('در حال تست اتصال...', 'wp-live-chat'),
+                'success' => __('اتصال موفقیت‌آمیز بود!', 'wp-live-chat'),
+                'error' => __('اتصال ناموفق بود', 'wp-live-chat')
+            ]
         ]);
     }
     
-    public function render_admin_page(): void {
+    public function render_settings_page(): void {
         if (!current_user_can('manage_options')) {
             wp_die(__('دسترسی غیرمجاز', 'wp-live-chat'));
         }
-        
-        $active_tab = $_GET['tab'] ?? 'general';
+
+                        // دریافت وضعیت فعلی
+        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
+        $status = $pusher_service ? $pusher_service->get_connection_status() : [];
+
         ?>
         <div class="wrap">
             <h1><?php echo esc_html__('تنظیمات چت آنلاین', 'wp-live-chat'); ?></h1>
-            
-            <h2 class="nav-tab-wrapper">
-                <a href="?page=wp-live-chat&tab=general" class="nav-tab <?php echo $active_tab === 'general' ? 'nav-tab-active' : ''; ?>">
-                    <?php echo esc_html__('عمومی', 'wp-live-chat'); ?>
-                </a>
-                <a href="?page=wp-live-chat&tab=advanced" class="nav-tab <?php echo $active_tab === 'advanced' ? 'nav-tab-active' : ''; ?>">
-                    <?php echo esc_html__('پیشرفته', 'wp-live-chat'); ?>
-                </a>
-                <a href="?page=wp-live-chat&tab=logs" class="nav-tab <?php echo $active_tab === 'logs' ? 'nav-tab-active' : ''; ?>">
-                    <?php echo esc_html__('لاگ‌ها', 'wp-live-chat'); ?>
-                </a>
-            </h2>
-            
-            <div class="wp-live-chat-admin">
-                <?php
-                switch ($active_tab) {
-                    case 'advanced':
-                        $this->render_advanced_tab();
-                        break;
-                    case 'logs':
-                        $this->render_logs_tab();
-                        break;
-                    default:
-                        $this->render_general_tab();
-                        break;
-                }
-                ?>
+                        <!-- نمایش وضعیت اتصال -->
+            <div class="connection-status-card" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #ddd;">
+                <h3><?php _e('وضعیت اتصال Pusher', 'wp-live-chat'); ?></h3>
+                <div id="current-connection-status">
+                    <?php if ($status && $status['connected']): ?>
+                        <div style="color: #46b450; font-weight: bold;">
+                            <span class="dashicons dashicons-yes-alt"></span>
+                            <?php _e('اتصال برقرار است', 'wp-live-chat'); ?>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 13px;">
+                            <strong><?php _e('آخرین تست:', 'wp-live-chat'); ?></strong>
+                            <?php echo $status['last_test'] ? date_i18n('Y-m-d H:i:s', $status['last_test']) : __('هرگز', 'wp-live-chat'); ?>
+                        </div>
+                    <?php elseif ($status && !$status['config_valid']): ?>
+                        <div style="color: #dc3232; font-weight: bold;">
+                            <span class="dashicons dashicons-warning"></span>
+                            <?php _e('تنظیمات ناقص است', 'wp-live-chat'); ?>
+                        </div>
+                    <?php elseif ($status && $status['last_error']): ?>
+                        <div style="color: #dc3232; font-weight: bold;">
+                            <span class="dashicons dashicons-dismiss"></span>
+                            <?php _e('اتصال ناموفق', 'wp-live-chat'); ?>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 13px; color: #666;">
+                            <strong><?php _e('آخرین خطا:', 'wp-live-chat'); ?></strong>
+                            <?php echo esc_html($status['last_error']); ?>
+                        </div>
+                    <?php else: ?>
+                        <div style="color: #ffb900; font-weight: bold;">
+                            <span class="dashicons dashicons-hourglass"></span>
+                            <?php _e('در حال بررسی...', 'wp-live-chat'); ?>
+                        </div>
+                    <?php endif; ?>
+                </div>
             </div>
-        </div>
-        <?php
-    }
 
-    private function render_general_tab(): void {
-        ?>
-        <div class="chat-admin-header">
-            <h2><?php echo esc_html__('پیکربندی Pusher', 'wp-live-chat'); ?></h2>
-            <p><?php echo esc_html__('برای استفاده از سیستم چت، ابتدا اطلاعات اتصال Pusher را وارد کنید.', 'wp-live-chat'); ?></p>
-        </div>
-        
-        <form method="post" action="options.php">
-            <?php 
-            settings_fields('wp_live_chat_settings');
-            do_settings_sections('wp_live_chat_settings');
-            ?>
-            
-            <table class="form-table">
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_pusher_app_id"><?php echo esc_html__('App ID', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <input type="text" 
-                            id="wp_live_chat_pusher_app_id" 
-                            name="wp_live_chat_pusher_app_id" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_pusher_app_id')); ?>" 
-                            class="regular-text" />
-                        <p class="description"><?php echo esc_html__('App ID مربوط به اپلیکیشن Pusher', 'wp-live-chat'); ?></p>
-                    </td>
-                </tr>
+            <form method="post" action="options.php">
+                <?php settings_fields('wp_live_chat_settings'); ?>
                 
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_pusher_key"><?php echo esc_html__('Key', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <input type="text" 
-                            id="wp_live_chat_pusher_key" 
-                            name="wp_live_chat_pusher_key" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_pusher_key')); ?>" 
-                            class="regular-text" />
-                        <p class="description"><?php echo esc_html__('کلید عمومی اپلیکیشن', 'wp-live-chat'); ?></p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_pusher_secret"><?php echo esc_html__('Secret', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <input type="password" 
-                            id="wp_live_chat_pusher_secret" 
-                            name="wp_live_chat_pusher_secret" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_pusher_secret')); ?>" 
-                            class="regular-text" />
-                        <p class="description"><?php echo esc_html__('کلید خصوصی اپلیکیشن', 'wp-live-chat'); ?></p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_pusher_cluster"><?php echo esc_html__('Cluster', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <input type="text" 
-                            id="wp_live_chat_pusher_cluster" 
-                            name="wp_live_chat_pusher_cluster" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_pusher_cluster', 'mt1')); ?>" 
-                            class="regular-text" />
-                        <p class="description"><?php echo esc_html__('مثلاً: mt1, eu, ap3', 'wp-live-chat'); ?></p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_enable_chat"><?php echo esc_html__('فعال کردن چت', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <input type="checkbox" 
-                            id="wp_live_chat_enable_chat" 
-                            name="wp_live_chat_enable_chat" 
-                            value="1" 
-                            <?php checked(get_option('wp_live_chat_enable_chat', true)); ?> />
-                        <label for="wp_live_chat_enable_chat"><?php echo esc_html__('فعال سازی سیستم چت', 'wp-live-chat'); ?></label>
-                    </td>
-                </tr>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_pusher_app_id"><?php _e('App ID', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                id="wp_live_chat_pusher_app_id" 
+                                name="wp_live_chat_pusher_app_id" 
+                                value="<?php echo esc_attr(get_option('wp_live_chat_pusher_app_id')); ?>" 
+                                class="regular-text" />
+                            <p class="description"><?php _e('App ID مربوط به اپلیکیشن Pusher', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_pusher_key"><?php _e('Key', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                id="wp_live_chat_pusher_key" 
+                                name="wp_live_chat_pusher_key" 
+                                value="<?php echo esc_attr(get_option('wp_live_chat_pusher_key')); ?>" 
+                                class="regular-text" />
+                            <p class="description"><?php _e('کلید عمومی اپلیکیشن', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_pusher_secret"><?php _e('Secret', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="password" 
+                                id="wp_live_chat_pusher_secret" 
+                                name="wp_live_chat_pusher_secret" 
+                                value="<?php echo esc_attr(get_option('wp_live_chat_pusher_secret')); ?>" 
+                                class="regular-text" />
+                            <p class="description"><?php _e('کلید خصوصی اپلیکیشن', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_pusher_cluster"><?php _e('Cluster', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="text" 
+                                id="wp_live_chat_pusher_cluster" 
+                                name="wp_live_chat_pusher_cluster" 
+                                value="<?php echo esc_attr(get_option('wp_live_chat_pusher_cluster', 'mt1')); ?>" 
+                                class="regular-text" />
+                            <p class="description"><?php _e('مثلاً: mt1, eu, ap3', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_enable_chat"><?php _e('فعال کردن چت', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="checkbox" 
+                                id="wp_live_chat_enable_chat" 
+                                name="wp_live_chat_enable_chat" 
+                                value="1" 
+                                <?php checked(get_option('wp_live_chat_enable_chat', true)); ?> />
+                            <label for="wp_live_chat_enable_chat"><?php _e('فعال سازی سیستم چت', 'wp-live-chat'); ?></label>
+                        </td>
+                    </tr>
+                    
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_offline_message"><?php _e('پیام آفلاین', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <textarea 
+                                id="wp_live_chat_offline_message" 
+                                name="wp_live_chat_offline_message" 
+                                class="large-text" 
+                                rows="3"
+                            ><?php echo esc_textarea(get_option('wp_live_chat_offline_message')); ?></textarea>
+                            <p class="description"><?php _e('پیامی که هنگام آفلاین بودن ادمین نمایش داده می‌شود', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
 
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_offline_message"><?php echo esc_html__('پیام آفلاین', 'wp-live-chat'); ?></label>
-                    </th>
-                    <td>
-                        <textarea 
-                            id="wp_live_chat_offline_message" 
-                            name="wp_live_chat_offline_message" 
-                            class="large-text" 
-                            rows="3"
-                        ><?php echo esc_textarea(get_option('wp_live_chat_offline_message', __('در حال حاضر آنلاین نیستیم. لطفاً پیام خود را بگذارید.', 'wp-live-chat'))); ?></textarea>
-                        <p class="description"><?php echo esc_html__('پیامی که هنگام آفلاین بودن ادمین نمایش داده می‌شود', 'wp-live-chat'); ?></p>
-                    </td>
-                </tr>
-            </table>
-            
-            <?php submit_button(__('ذخیره تنظیمات', 'wp-live-chat')); ?>
-        </form>
-        
-        <div class="chat-admin-test">
-            <h3><?php echo esc_html__('تست اتصال', 'wp-live-chat'); ?></h3>
-            <button type="button" id="test-pusher-connection" class="button button-secondary">
-                <?php echo esc_html__('تست اتصال به Pusher', 'wp-live-chat'); ?>
-            </button>
-            <div id="test-result" class="test-result"></div>
-        </div>
-        <?php
-    }
+                    <tr>
+                        <th scope="row">
+                            <label for="wp_live_chat_debug_mode"><?php _e('حالت دیباگ', 'wp-live-chat'); ?></label>
+                        </th>
+                        <td>
+                            <input type="checkbox" 
+                                id="wp_live_chat_debug_mode" 
+                                name="wp_live_chat_debug_mode" 
+                                value="1" 
+                                <?php checked(get_option('wp_live_chat_debug_mode', false)); ?> />
+                            <label for="wp_live_chat_debug_mode"><?php _e('فعال کردن لاگ دیباگ', 'wp-live-chat'); ?></label>
+                            <p class="description"><?php _e('برای عیب‌یابی مشکلات Pusher فعال کنید', 'wp-live-chat'); ?></p>
+                        </td>
+                    </tr>
 
-    private function render_advanced_tab(): void {
-        ?>
-        <div class="chat-admin-header">
-            <h2><?php echo esc_html__('تنظیمات پیشرفته', 'wp-live-chat'); ?></h2>
-            <p><?php echo esc_html__('تنظیمات پیشرفته سیستم چت', 'wp-live-chat'); ?></p>
-        </div>
-        
-        <form method="post" action="options.php">
-            <?php 
-            settings_fields('wp_live_chat_advanced_settings');
-            do_settings_sections('wp_live_chat_advanced_settings');
-            ?>
-            
-            <table class="form-table">
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_cache_enabled">فعالسازی کش</label>
-                    </th>
-                    <td>
-                        <input type="checkbox" 
-                            id="wp_live_chat_cache_enabled" 
-                            name="wp_live_chat_cache_enabled" 
-                            value="1" 
-                            <?php checked(get_option('wp_live_chat_cache_enabled', true)); ?> />
-                        <label for="wp_live_chat_cache_enabled">استفاده از کش برای بهبود عملکرد</label>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_auto_cleanup">پاکسازی خودکار</label>
-                    </th>
-                    <td>
-                        <input type="number" 
-                            id="wp_live_chat_auto_cleanup" 
-                            name="wp_live_chat_auto_cleanup" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_auto_cleanup', 30)); ?>" 
-                            min="1" max="365" />
-                        <p class="description">تعداد روزهای نگهداری تاریخچه چت (1-365 روز)</p>
-                    </td>
-                </tr>
-                
-                <tr>
-                    <th scope="row">
-                        <label for="wp_live_chat_max_message_length">حداکثر طول پیام</label>
-                    </th>
-                    <td>
-                        <input type="number" 
-                            id="wp_live_chat_max_message_length" 
-                            name="wp_live_chat_max_message_length" 
-                            value="<?php echo esc_attr(get_option('wp_live_chat_max_message_length', 500)); ?>" 
-                            min="100" max="5000" />
-                        <p class="description">حداکثر تعداد کاراکتر مجاز برای هر پیام</p>
-                    </td>
-                </tr>
-            </table>
-            
-            <?php submit_button(__('ذخیره تنظیمات پیشرفته', 'wp-live-chat')); ?>
-        </form>
-        <?php
-    }    
 
-    private function render_logs_tab(): void {
-        /** @var Logger $logger */
-        $logger = Plugin::get_instance()->get_service('logger');
-        $logs = $logger->get_logs(50);
-        ?>
-        <div class="chat-admin-header">
-            <h2><?php echo esc_html__('لاگ‌های سیستم', 'wp-live-chat'); ?></h2>
-            <p><?php echo esc_html__('نمایش لاگ‌های دیباگ سیستم چت', 'wp-live-chat'); ?></p>
-        </div>
-        
-        <div class="chat-logs-container">
-            <div class="log-actions">
-                <button type="button" id="refresh-logs" class="button button-secondary">
-                    بروزرسانی لاگ‌ها
+                </table>
+                
+                <?php submit_button(__('ذخیره تنظیمات', 'wp-live-chat')); ?>
+            </form>
+            
+            <div class="test-connection">
+                <h3><?php _e('تست اتصال', 'wp-live-chat'); ?></h3>
+                <button type="button" id="test-pusher-connection" class="button button-secondary">
+                    <?php _e('تست اتصال به Pusher', 'wp-live-chat'); ?>
                 </button>
-                <button type="button" id="clear-logs" class="button button-secondary">
-                    پاک کردن لاگ‌ها
-                </button>
-                <button type="button" id="download-logs" class="button button-primary">
-                    دانلود لاگ‌ها
-                </button>
+                <div id="test-result" class="test-result" style="margin-top: 10px; min-height: 50px;"></div>
             </div>
-            
-            <div class="log-content">
-                <?php if (empty($logs)): ?>
-                    <p class="no-logs">هیچ لاگی برای نمایش وجود ندارد.</p>
-                <?php else: ?>
-                    <pre class="log-entries"><code><?php
-                        foreach (array_reverse($logs) as $log) {
-                            echo esc_html($log) . "\n";
-                        }
-                    ?></code></pre>
-                <?php endif; ?>
-            </div>
+
+            <!-- نمایش اطلاعات دیباگ (فقط برای ادمین) -->
+            <details style="margin-top: 30px;">
+                <summary style="cursor: pointer; color: #666; font-size: 13px;">
+                    <?php _e('اطلاعات دیباگ (فقط توسعه)', 'wp-live-chat'); ?>
+                </summary>
+                <div style="background: #f1f1f1; padding: 15px; margin-top: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+                    <pre><?php echo esc_html(json_encode($status, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE)); ?></pre>
+                </div>
+            </details>
         </div>
-        
-        <style>
-        .log-actions {
-            margin-bottom: 20px;
-        }
-        
-        .log-actions .button {
-            margin-right: 10px;
-        }
-        
-        .log-content {
-            background: #1d2327;
-            color: #f0f0f1;
-            padding: 20px;
-            border-radius: 4px;
-            max-height: 500px;
-            overflow-y: auto;
-            font-family: 'Courier New', monospace;
-            font-size: 12px;
-            line-height: 1.4;
-        }
-        
-        .log-entries {
-            margin: 0;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-        
-        .no-logs {
-            text-align: center;
-            padding: 40px;
-            color: #666;
-            font-style: italic;
-        }
-        </style>
-        
+          
         <script>
         jQuery(document).ready(function($) {
-            $('#refresh-logs').on('click', function() {
-                location.reload();
-            });
-            
-            $('#clear-logs').on('click', function() {
-                if (confirm('آیا از پاک کردن تمام لاگ‌ها مطمئن هستید؟')) {
-                    $.post(ajaxurl, {
-                        action: 'clear_chat_logs',
+            $('#test-pusher-connection').on('click', function() {
+                var $button = $(this);
+                var $result = $('#test-result');
+                
+                $button.prop('disabled', true).text('در حال تست...');
+                $result.html('<div class="notice notice-info"><p>در حال تست اتصال...</p></div>');
+                
+                $.ajax({
+                    url: '<?php echo admin_url('admin-ajax.php'); ?>',
+                    type: 'POST',
+                    data: {
+                        action: 'test_pusher_connection',
                         nonce: '<?php echo wp_create_nonce('wp_live_chat_admin_nonce'); ?>'
-                    }, function(response) {
+                    },
+                    dataType: 'json',
+                    success: function(response) {
                         if (response.success) {
-                            location.reload();
+                            $result.html('<div class="notice notice-success"><p>' + response.data.message + '</p>' + 
+                                        '<p><small>شناسه برنامه: ' + (response.data.details.app_id || 'N/A') + 
+                                        ' | کلاستر: ' + (response.data.details.cluster || 'N/A') + '</small></p></div>');
+                            // به‌روزرسانی وضعیت فعلی
+                            $('#current-connection-status').html('<div style="color: #46b450; font-weight: bold;">' +
+                                '<span class="dashicons dashicons-yes-alt"></span> اتصال برقرار است' +
+                                '</div><div style="margin-top: 10px; font-size: 13px;">' +
+                                '<strong>آخرین تست:</strong> هم اکنون' +
+                                '</div>');
                         } else {
-                            alert('خطا در پاک کردن لاگ‌ها');
+                            $result.html('<div class="notice notice-error"><p>' + response.data.message + '</p>' +
+                                        (response.data.details.error ? '<p><small>خطا: ' + response.data.details.error + '</small></p>' : '') +
+                                        '</div>');
                         }
-                    });
-                }
-            });
-            
-            $('#download-logs').on('click', function() {
-                window.open('<?php echo admin_url('admin-ajax.php?action=download_chat_logs&nonce=' . wp_create_nonce('wp_live_chat_admin_nonce')); ?>');
+                    },
+                    error: function(xhr, status, error) {
+                        $result.html('<div class="notice notice-error"><p>خطا در ارتباط با سرور</p><p><small>' + error + '</small></p></div>');
+                    },
+                    complete: function() {
+                        $button.prop('disabled', false).text('تست اتصال به Pusher');
+                    }
+                });
             });
         });
         </script>
         <?php
+
+
     }
     
+    // اضافه کردن به کلاس Admin
     public function test_pusher_connection(): void {
         check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
         
         if (!current_user_can('manage_options')) {
-            wp_send_json_error(__('دسترسی غیرمجاز', 'wp-live-chat'));
-        }
-
-        /** @var Pusher_Service $pusher_service */
-        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
-        
-        if (!$pusher_service) {
-            wp_send_json_error(['message' => 'Pusher service not available']);
-            return;
+            wp_send_json_error('دسترسی غیرمجاز', 403);
         }
         
-        if ($pusher_service->is_connected()) {
-            // تست واقعی با ارسال یک پیام تست
-            try {
-                $test_result = $pusher_service->trigger(
-                    'private-chat-test',
-                    'test-event', 
-                    ['message' => 'Test connection']
-                );
-                
-                if ($test_result) {
-                    wp_send_json_success(['message' => __('اتصال موفقیت‌آمیز بود!', 'wp-live-chat')]);
-                } else {
-                    wp_send_json_error(['message' => __('اتصال برقرار شد اما ارسال پیام ناموفق بود', 'wp-live-chat')]);
-                }
-            } catch (Exception $e) {
-                wp_send_json_error(['message' => 'Pusher error: ' . $e->getMessage()]);
-            }
-        } else {
-            wp_send_json_error(['message' => __('اتصال ناموفق بود. لطفاً تنظیمات را بررسی کنید.', 'wp-live-chat')]);
-        }
-    }
-
-    public function clear_chat_logs(): void {
-        check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_send_json_error(__('دسترسی غیرمجاز', 'wp-live-chat'));
-        }
-
         try {
-            /** @var Logger $logger */
-            $logger = Plugin::get_instance()->get_service('logger');
-            $result = $logger->clear_logs();
+            $pusher_service = Plugin::get_instance()->get_service('pusher_service');
             
-            if ($result) {
-                wp_send_json_success(['message' => __('لاگ‌ها با موفقیت پاک شدند', 'wp-live-chat')]);
+            if (!$pusher_service) {
+                wp_send_json_error([
+                    'message' => 'سرویس Pusher در دسترس نیست',
+                    'details' => ['error' => 'Service not found']
+                ]);
+                return;
+            }
+            
+            $result = $pusher_service->test_connection();
+            
+            if ($result['success']) {
+                wp_send_json_success([
+                    'message' => $result['message'],
+                    'details' => $result['details']
+                ]);
             } else {
-                wp_send_json_error(['message' => __('خطا در پاک کردن لاگ‌ها', 'wp-live-chat')]);
+                wp_send_json_error([
+                    'message' => $result['message'],
+                    'details' => $result['details']
+                ]);
             }
-        } catch (Exception $e) {
-            wp_send_json_error(['message' => 'Error: ' . $e->getMessage()]);
+            
+        } catch (\Exception $e) {
+            wp_send_json_error([
+                'message' => 'خطای غیرمنتظره: ' . $e->getMessage(),
+                'details' => ['exception' => $e->getTraceAsString()]
+            ]);
         }
     }
 
-    public function download_chat_logs(): void {
-        check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
-        
-        if (!current_user_can('manage_options')) {
-            wp_die(__('دسترسی غیرمجاز', 'wp-live-chat'));
-        }
-
-        try {
-            /** @var Logger $logger */
-            $logger = Plugin::get_instance()->get_service('logger');
-            $logs = $logger->get_logs(1000); // آخرین 1000 خط
-            
-            header('Content-Type: text/plain');
-            header('Content-Disposition: attachment; filename="wp-live-chat-logs-' . date('Y-m-d-H-i-s') . '.txt"');
-            
-            foreach (array_reverse($logs) as $log) {
-                echo $log . "\n";
-            }
-            
-            exit;
-        } catch (Exception $e) {
-            wp_die('Error: ' . $e->getMessage());
-        }
-    }
 }

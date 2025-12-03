@@ -4,38 +4,33 @@
     class WPLiveChatAdmin {
         constructor() {
             this.config = window.wpLiveChatAdmin || {};
-            this.pusher = null;
             this.currentSession = null;
             this.sessions = [];
-            this.currentChannel = null;
+            this.pusher = null;
+            this.channel = null;
             
-            console.log('🚀 Admin Chat Initializing...', this.config);
+            // اضافه کردن متغیرهای جدید
+            this.isLoading = false;
+            this.retryCount = 0;
+            this.maxRetries = 3;
+            
             this.init();
         }
 
-        // 🔥 **اصلاح: تبدیل متد init به async**
-        async init() {
+        init() {
             this.bindEvents();
-            await this.loadSessions(); // حالا می‌تواند await داشته باشد
             this.initPusher();
+            this.loadSessions();
             
-            // 🔥 **اصلاح: درخواست مجوز نوتیفیکیشن بدون await مشکل‌ساز**
-            this.requestNotificationPermission();
-        }
-
-        // 🔥 **اضافه: متد جداگانه برای درخواست مجوز نوتیفیکیشن**
-        requestNotificationPermission() {
-            if ('Notification' in window && Notification.permission === 'default') {
-                Notification.requestPermission().then(permission => {
-                    console.log('Notification permission:', permission);
-                }).catch(error => {
-                    console.error('Error requesting notification permission:', error);
-                });
-            }
+            // افزودن event listener برای مدیریت خطاها
+            $(document).ajaxError((event, jqxhr, settings, thrownError) => {
+                console.error('AJAX Error:', thrownError, settings.url);
+                this.showError('خطا در ارتباط با سرور');
+            });
         }
 
         bindEvents() {
-            $('#reload-sessions').on('click', () => this.loadSessions());
+            $('#refresh-sessions').on('click', () => this.loadSessions());
             $('#admin-send-button').on('click', () => this.sendMessage());
             
             $('#admin-message-input').on('keydown', (e) => {
@@ -44,296 +39,23 @@
                     this.sendMessage();
                 }
             });
-        }
-
-        // 🔥 **اصلاح: متد loadSessions با استفاده از Promise**
-        loadSessions() {
-            console.log('📋 Loading sessions...');
             
-            return new Promise((resolve, reject) => {
-                $.ajax({
-                    url: this.config.ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'get_chat_sessions',
-                        nonce: this.config.nonce
-                    },
-                    dataType: 'json',
-                    timeout: 10000
-                })
-                .done((response) => {
-                    console.log('📡 API Response:', response);
-
-                    if (response.success) {
-                        this.sessions = response.data;
-                        this.renderSessions();
-                        console.log('✅ Sessions loaded:', this.sessions.length);
-                        resolve(response.data);
-                    } else {
-                        console.error('❌ API Error:', response.data);
-                        this.showError('خطا در بارگذاری گفتگوها: ' + (response.data || 'خطای ناشناخته'));
-                        reject(response.data);
-                    }
-                })
-                .fail((error) => {
-                    console.error('❌ Network Error:', error);
-                    
-                    if (error.responseText && error.responseText.includes('wpdberror')) {
-                        this.showError('خطای دیتابیس - لطفا جداول چت را بررسی کنید');
-                        console.error('📋 Database error in response:', error.responseText);
-                    } else {
-                        let errorMessage = 'خطا در ارتباط با سرور';
-                        if (error.status === 500) {
-                            errorMessage = 'خطای سرور (500) - لطفا error_log را بررسی کنید';
-                        } else if (error.status === 403) {
-                            errorMessage = 'دسترسی غیرمجاز';
-                        } else if (error.statusText) {
-                            errorMessage += ': ' + error.statusText;
-                        }
-                        this.showError(errorMessage);
-                    }
-                    reject(error);
-                });
-            });
-        }
-
-        renderSessions() {
-            const container = $('#sessions-container');
-            container.empty();
-
-            if (this.sessions.length === 0) {
-                container.html('<div class="no-sessions">هیچ گفتگوی فعالی وجود ندارد</div>');
-                return;
-            }
-
-            this.sessions.forEach(session => {
-                const lastMessage = session.last_message || {};
-                
-                // نمایش نام کاربر به صورت ایمن
-                let userName = session.user_name || 'کاربر ناشناس';
-                if (userName === 'undefined' || userName === 'مهمان') {
-                    userName = 'کاربر مهمان';
+            // اضافه کردن event برای رفرش خودکار هر 30 ثانیه
+            setInterval(() => {
+                if (this.currentSession) {
+                    this.loadSessionMessages(this.currentSession.session_id);
                 }
-                
-                const sessionElement = $(`
-                    <div class="session-item" data-session-id="${session.session_id}">
-                        <div class="session-user">
-                            <strong>${this.escapeHtml(userName)}</strong>
-                            ${session.user_email ? `<br><small>${session.user_email}</small>` : ''}
-                            ${lastMessage.message_content ? `<br><small class="last-message">${this.truncateText(lastMessage.message_content, 30)}</small>` : ''}
-                        </div>
-                        <div class="session-info">
-                            <small>پیام‌ها: ${session.message_count || 0}</small>
-                            <br>
-                            <small>آخرین فعالیت: ${this.formatTime(session.last_activity)}</small>
-                        </div>
-                        <div class="session-status">
-                            <span class="status-dot ${session.status === 'active' ? 'online' : 'offline'}"></span>
-                            ${session.unread_count > 0 ? 
-                                `<span class="unread-badge">${session.unread_count}</span>` : 
-                                ''
-                            }
-                        </div>
-                    </div>
-                `);
-
-                sessionElement.on('click', () => this.selectSession(session));
-                container.append(sessionElement);
-            });
-        }
-
-        // 🔥 **اصلاح: متد selectSession به async**
-        async selectSession(session) {
-            console.log('🎯 Selecting session:', session);
-            
-            $('.session-item').removeClass('active');
-            $(`.session-item[data-session-id="${session.session_id}"]`).addClass('active');
-            
-            this.currentSession = session;
-            
-            $('#current-session-name').text(session.user_name || 'کاربر ناشناس');
-            $('#session-status').text(session.status === 'active' ? 'آنلاین' : 'آفلاین')
-                            .removeClass('status-offline status-online')
-                            .addClass(session.status === 'active' ? 'status-online' : 'status-offline');
-            
-            $('#admin-message-input').prop('disabled', false);
-            $('#admin-send-button').prop('disabled', false);
-            
-            await this.loadSessionMessages(session.session_id);
-            this.subscribeToSession(session.session_id);
-        }
-
-        loadSessionMessages(sessionId) {
-            console.log('📨 Loading messages for session:', sessionId);
-            
-            return new Promise((resolve, reject) => {
-                $.ajax({
-                    url: this.config.ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'get_session_messages',
-                        nonce: this.config.nonce,
-                        session_id: sessionId
-                    },
-                    dataType: 'json',
-                    timeout: 10000
-                })
-                .done((response) => {
-                    console.log('📨 Messages API Response:', response);
-
-                    if (response.success) {
-                        this.renderMessages(response.data);
-                        console.log('✅ Messages loaded:', response.data.length);
-                        resolve(response.data);
-                    } else {
-                        console.error('❌ API Error:', response.data);
-                        this.showError('خطا در بارگذاری پیام‌ها: ' + response.data);
-                        reject(response.data);
-                    }
-                })
-                .fail((error) => {
-                    console.error('❌ Network Error:', error);
-                    
-                    if (error.responseText && error.responseText.includes('wpdberror')) {
-                        this.showError('خطای دیتابیس در بارگذاری پیام‌ها');
-                    } else {
-                        this.showError('خطا در بارگذاری پیام‌ها: ' + error.statusText);
-                    }
-                    reject(error);
-                });
-            });
-        }
-
-        renderMessages(messages) {
-            const container = $('#admin-chat-messages');
-            container.empty();
-
-            $('.no-chat-selected').remove();
-
-            if (!messages || messages.length === 0) {
-                container.html('<div class="no-messages">هنوز پیامی رد و بدل نشده است</div>');
-                return;
-            }
-
-            messages.forEach(message => {
-                const messageClass = message.message_type === 'admin' ? 'message-admin-user' : 'message-user';
-                const senderName = message.message_type === 'admin' ? 'پشتیبان' : (message.user_name || 'کاربر');
-                
-                const messageElement = $(`
-                    <div class="message-admin ${messageClass}">
-                        <div class="message-content">
-                            <p>${this.escapeHtml(message.message_content)}</p>
-                        </div>
-                        <div class="message-time">
-                            ${this.formatTime(message.created_at)}
-                            <span class="sender-name">(${senderName})</span>
-                        </div>
-                    </div>
-                `);
-
-                container.append(messageElement);
-            });
-
-            container.scrollTop(container[0].scrollHeight);
-        }
-
-        // 🔥 **اصلاح: متد sendMessage به async**
-        async sendMessage() {
-            const messageInput = $('#admin-message-input');
-            const message = messageInput.val().trim();
-
-            if (!message || !this.currentSession) {
-                return;
-            }
-
-            console.log('📤 Sending admin message:', message);
-
-            // غیرفعال کردن دکمه
-            $('#admin-send-button').prop('disabled', true).text('در حال ارسال...');
-
-            try {
-                const response = await $.ajax({
-                    url: this.config.ajaxurl,
-                    type: 'POST',
-                    data: {
-                        action: 'send_admin_message',
-                        nonce: this.config.nonce,
-                        message: message,
-                        session_id: this.currentSession.session_id
-                    },
-                    dataType: 'json',
-                    timeout: 10000
-                });
-
-                console.log('📤 Send Message Response:', response);
-
-                if (response.success) {
-                    console.log('✅ Admin message sent');
-                    
-                    // پاک کردن input
-                    messageInput.val('');
-                    
-                    // بارگذاری مجدد پیام‌ها برای نمایش به‌روزرسانی شده
-                    await this.loadSessionMessages(this.currentSession.session_id);
-                    
-                } else {
-                    console.error('❌ Failed to send admin message:', response.data);
-                    this.showError('خطا در ارسال پیام: ' + response.data);
-                }
-            } catch (error) {
-                console.error('❌ Error sending message:', error);
-                this.showError('خطا در ارسال پیام: ' + error.statusText);
-            } finally {
-                // فعال کردن دکمه
-                $('#admin-send-button').prop('disabled', false).text('ارسال');
-            }
-        }
-
-        addLocalMessage(messageData) {
-            const container = $('#admin-chat-messages');
-            const messageClass = messageData.message_type === 'admin' ? 'message-admin-user' : 'message-user';
-            const senderName = messageData.message_type === 'admin' ? 'پشتیبان' : (messageData.user_name || 'کاربر');
-            
-            const messageElement = $(`
-                <div class="message-admin ${messageClass}">
-                    <div class="message-content">
-                        <p>${this.escapeHtml(messageData.message_content)}</p>
-                    </div>
-                    <div class="message-time">
-                        ${this.formatTime(messageData.created_at)}
-                        <span class="sender-name">(${senderName})</span>
-                    </div>
-                </div>
-            `);
-
-            container.append(messageElement);
-            container.scrollTop(container[0].scrollHeight);
-        }
-
-        // اضافه کردن این متد به کلاس
-        checkInternetConnection() {
-            if (!navigator.onLine) {
-                this.showError('اتصال اینترنت برقرار نیست');
-                return false;
-            }
-            return true;
+            }, 30000);
         }
 
         initPusher() {
-                    if (!this.config.pusherKey) {
-                        console.warn('⚠️ Pusher key not configured');
-                        this.showError('کلید Pusher تنظیم نشده است');
-                        return;
-                    }
-
-            if (typeof Pusher === 'undefined') {
-                console.error('❌ Pusher library not loaded');
-                this.showError('کتابخانه Pusher بارگذاری نشد');
+            if (!this.config.pusherKey || typeof Pusher === 'undefined') {
+                console.error('Pusher not configured');
+                this.showError('سرویس Pusher پیکربندی نشده است');
                 return;
             }
 
             try {
-                // استفاده از تنظیمات سازگار‌تر
                 this.pusher = new Pusher(this.config.pusherKey, {
                     cluster: this.config.pusherCluster,
                     forceTLS: true,
@@ -343,179 +65,345 @@
                             action: 'auth_pusher_channel_admin',
                             nonce: this.config.nonce
                         }
-                    },
-                    // فعال کردن fallback به HTTP زمانی که WebSocket کار نمی‌کند
-                    enabledTransports: ['ws', 'wss', 'xhr_streaming', 'xhr_polling'],
-                    disabledTransports: ['sockjs']
+                    }
                 });
 
-                console.log('✅ Pusher initialized for admin');
-
-                // مانیتور وضعیت اتصال
-                this.pusher.connection.bind('state_change', (states) => {
-                    console.log('🔌 Admin Pusher State:', states.previous, '->', states.current);
+                // Subscribe to admin channel for notifications
+                const adminChannel = this.pusher.subscribe('admin-notifications');
+                adminChannel.bind('new-chat', (data) => {
+                    this.handleNewChatNotification(data);
                 });
-
-                this.pusher.connection.bind('connected', () => {
-                    console.log('✅ Pusher connected successfully');
-                });
-
-                this.pusher.connection.bind('error', (error) => {
-                    console.error('❌ Pusher connection error:', error);
-                    this.showError('خطا در اتصال به Pusher: ' + error.message);
-                });
-
-            } catch (error) {
-                console.error('❌ Pusher init error:', error);
-                this.showError('خطا در راه‌اندازی Pusher: ' + error.message);
                 
-                // غیرفعال کردن قابلیت real-time به صورت موقت
-                this.showError('اتصال real-time غیرفعال شد. چت به صورت عادی کار می‌کند.');
+                // تشخیص وضعیت اتصال
+                this.pusher.connection.bind('state_change', (states) => {
+                    console.log('Pusher connection state:', states.current);
+                });
+                
+            } catch (error) {
+                console.error('Error initializing Pusher:', error);
+                this.showError('خطا در راه‌اندازی Pusher');
+            }
+        }
+
+        async loadSessions() {
+            if (this.isLoading) return;
+            
+            this.isLoading = true;
+            $('#refresh-sessions').prop('disabled', true).text('در حال بارگذاری...');
+            
+            try {
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'get_chat_sessions',
+                        nonce: this.config.nonce
+                    },
+                    dataType: 'json',
+                    timeout: 10000
+                });
+
+                if (response.success) {
+                    this.sessions = response.data;
+                    this.renderSessions();
+                    this.retryCount = 0; // ریست کردن شمارشگر تلاش مجدد
+                } else {
+                    throw new Error(response.data || 'خطا در دریافت جلسات');
+                }
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                this.showError('خطا در بارگذاری جلسات: ' + error.message);
+                
+                // تلاش مجدد
+                if (this.retryCount < this.maxRetries) {
+                    this.retryCount++;
+                    setTimeout(() => this.loadSessions(), 2000);
+                }
+            } finally {
+                this.isLoading = false;
+                $('#refresh-sessions').prop('disabled', false).text('بروزرسانی');
+            }
+        }
+
+        renderSessions() {
+            const container = $('#sessions-list');
+            container.empty();
+
+            if (this.sessions.length === 0) {
+                container.html('<div class="no-sessions">' + this.config.strings.noActiveChats + '</div>');
+                return;
             }
 
-             // 🔥 **اضافه: شنود کانال ادمین برای پیام‌های جدید کاربران**
-            this.adminChannel = this.pusher.subscribe('admin-chat-channel');
-            
-            this.adminChannel.bind('new-user-message', (data) => {
-                console.log('🔔 New user message received:', data);
-                
-                // اگر session مربوطه در حال نمایش است، پیام‌ها را رفرش کن
-                if (this.currentSession && this.currentSession.session_id === data.session_id) {
-                    this.loadSessionMessages(data.session_id);
-                }
-                
-                    // اضافه کردن این بخش برای جلوگیری از بارگذاری مجدد پیام‌ها
-                this.receivedMessageIds = new Set();
-                // آپدیت لیست sessions
-                this.loadSessions();
-                
-                // نمایش نوتیفیکیشن
-                this.showNewMessageNotification(data);
+            this.sessions.forEach(session => {
+                const sessionElement = $(`
+                    <div class="session-item" data-session-id="${session.session_id}">
+                        <div class="session-info">
+                            <div class="session-user">
+                                <strong>${this.escapeHtml(session.user_name || 'کاربر')}</strong>
+                                ${session.user_phone ? `<div class="session-phone">${session.user_phone}</div>` : ''}
+                            </div>
+                            <div class="session-meta">
+                                <span class="message-count">${session.message_count || 0} پیام</span>
+                                <span class="last-activity">${this.formatTime(session.last_activity)}</span>
+                            </div>
+                        </div>
+                        ${session.unread_count > 0 ? 
+                            `<span class="unread-badge">${session.unread_count}</span>` : 
+                            ''
+                        }
+                    </div>
+                `);
+
+                sessionElement.on('click', () => this.selectSession(session));
+                container.append(sessionElement);
             });
         }
 
-        // 🔥 **اصلاح: بخش handle message در ادمین**
-        handleNewMessage(data) {
-            console.log('📨 New message in admin:', data);
+        async selectSession(session) {
+            $('.session-item').removeClass('active');
+            $(`.session-item[data-session-id="${session.session_id}"]`).addClass('active');
             
-            // بررسی تکراری نبودن
-            if (this.isMessageDuplicate(data.message_id)) {
-                console.log('⚠️ Duplicate message in admin, ignoring:', data.message_id);
+            this.currentSession = session;
+            
+            $('#current-session-title').text(session.user_name || 'کاربر');
+            $('#session-status').text(session.status === 'active' ? 'آنلاین' : 'آفلاین')
+                .removeClass('status-offline status-online')
+                .addClass(session.status === 'active' ? 'status-online' : 'status-offline');
+            
+            $('#admin-chat-input').show();
+            $('#admin-message-input').focus();
+            
+            await this.loadSessionMessages(session.session_id);
+            this.subscribeToSession(session.session_id);
+        }
+
+        async loadSessionMessages(sessionId) {
+            try {
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'get_session_messages',
+                        nonce: this.config.nonce,
+                        session_id: sessionId
+                    },
+                    dataType: 'json',
+                    timeout: 10000
+                });
+
+                if (response.success) {
+                    this.renderMessages(response.data);
+                } else {
+                    throw new Error(response.data || 'خطا در دریافت پیام‌ها');
+                }
+            } catch (error) {
+                console.error('Error loading messages:', error);
+                this.showError('خطا در بارگذاری پیام‌ها');
+            }
+        }
+
+        renderMessages(messages) {
+            const container = $('#admin-chat-messages');
+            container.empty();
+
+            if (!messages || messages.length === 0) {
+                container.html('<div class="no-messages">هنوز پیامی رد و بدل نشده است</div>');
                 return;
             }
-            
-            // فقط اگر session مربوطه در حال نمایش است، رفرش کن
-            if (this.currentSession && this.currentSession.session_id === data.session_id) {
-                console.log('🔄 Refreshing messages for current session');
-                this.loadSessionMessages(data.session_id);
-            }
-            
-            // آپدیت لیست sessions
-            this.loadSessions();
+
+            messages.forEach(message => {
+                const messageElement = $(`
+                    <div class="message ${message.message_type === 'admin' ? 'admin' : 'user'}">
+                        <div class="message-header">
+                            <span class="message-sender">
+                                ${message.message_type === 'admin' ? 
+                                    '👨‍💼 پشتیبان' : 
+                                    '👤 ' + this.escapeHtml(message.user_name || 'کاربر')}
+                            </span>
+                            <span class="message-time">${this.formatTime(message.created_at)}</span>
+                        </div>
+                        <div class="message-content">
+                            <p>${this.escapeHtml(message.message_content)}</p>
+                        </div>
+                    </div>
+                `);
+
+                container.append(messageElement);
+            });
+
+            // اسکرول به پایین
+            container.scrollTop(container[0].scrollHeight);
         }
 
-        // 🔥 **اضافه: متد جدید برای بررسی تکراری بودن پیام در ادمین**
-        isMessageDuplicate(messageId) {
-            if (this.receivedMessageIds.has(messageId)) {
-                return true;
+        async sendMessage() {
+            if (!this.currentSession) {
+                this.showError('لطفاً ابتدا یک گفتگو را انتخاب کنید');
+                return;
             }
-            
-            // ذخیره ID پیام
-            this.receivedMessageIds.add(messageId);
-            
-            // حفظ حداکثر 1000 ID
-            if (this.receivedMessageIds.size > 1000) {
-                const firstId = this.receivedMessageIds.values().next().value;
-                this.receivedMessageIds.delete(firstId);
-            }
-            
-            return false;
-        }
 
-        showNewMessageNotification(data) {
-            if (!this.currentSession || this.currentSession.session_id !== data.session_id) {
-                // نمایش نوتیفیکیشن برای sessionهای دیگر
-                const notification = new Notification('پیام جدید از ' + data.user_name, {
-                    body: data.message,
-                    icon: '/wp-content/plugins/wp-live-chat/assets/images/icon.png'
+            const input = $('#admin-message-input');
+            const message = input.val().trim();
+
+            if (!message) {
+                this.showError('لطفاً پیامی وارد کنید');
+                return;
+            }
+
+            // غیرفعال کردن دکمه در حین ارسال
+            const $sendBtn = $('#admin-send-button');
+            $sendBtn.prop('disabled', true).text('در حال ارسال...');
+
+            try {
+                const response = await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'send_admin_message', // اصلاح شده: send_admin_message
+                        nonce: this.config.nonce,
+                        session_id: this.currentSession.session_id,
+                        message: message
+                    },
+                    dataType: 'json',
+                    timeout: 10000
                 });
-                
-                notification.onclick = () => {
-                    // انتخاب session مربوطه هنگام کلیک روی نوتیفیکیشن
-                    const targetSession = this.sessions.find(s => s.session_id === data.session_id);
-                    if (targetSession) {
-                        this.selectSession(targetSession);
-                    }
-                };
+
+                if (response.success) {
+                    input.val('');
+                    
+                    // افزودن پیام به لیست محلی
+                    this.addLocalMessage({
+                        message_content: message,
+                        user_name: 'پشتیبان',
+                        message_type: 'admin',
+                        created_at: new Date().toISOString()
+                    });
+                    
+                    // نمایش موفقیت
+                    this.showSuccess('پیام با موفقیت ارسال شد');
+                } else {
+                    throw new Error(response.data || 'خطا در ارسال پیام');
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                this.showError('خطا در ارسال پیام: ' + error.message);
+            } finally {
+                $sendBtn.prop('disabled', false).text('ارسال');
             }
+        }
+
+        addLocalMessage(messageData) {
+            const container = $('#admin-chat-messages');
+            
+            const messageElement = $(`
+                <div class="message admin">
+                    <div class="message-header">
+                        <span class="message-sender">👨‍💼 پشتیبان</span>
+                        <span class="message-time">${this.formatTime(messageData.created_at)}</span>
+                    </div>
+                    <div class="message-content">
+                        <p>${this.escapeHtml(messageData.message_content)}</p>
+                    </div>
+                </div>
+            `);
+
+            container.append(messageElement);
+            container.scrollTop(container[0].scrollHeight);
         }
 
         subscribeToSession(sessionId) {
             if (!this.pusher) {
-                console.error('Pusher not initialized');
+                console.warn('Pusher not initialized');
                 return;
             }
 
             // unsubscribe از کانال قبلی
-            if (this.currentChannel) {
-                this.currentChannel.unbind_all();
-                this.pusher.unsubscribe(this.currentChannel.name);
+            if (this.channel) {
+                try {
+                    this.pusher.unsubscribe(this.channel.name);
+                } catch (e) {
+                    console.warn('Error unsubscribing from channel:', e);
+                }
             }
 
-            const channelName = `private-chat-${sessionId}`;
+            // subscribe به کانال عمومی کاربر
+            const channelName = `chat-${sessionId}`;
             
             try {
-                this.currentChannel = this.pusher.subscribe(channelName);
+                this.channel = this.pusher.subscribe(channelName);
                 
-                this.currentChannel.bind('pusher:subscription_succeeded', () => {
-                    console.log('✅ Admin subscribed to session:', sessionId);
-                });
+                console.log('Subscribed to channel:', channelName);
 
-                this.currentChannel.bind('pusher:subscription_error', (error) => {
-                    console.error('❌ Subscription error:', error);
-                    this.showError('خطا در اتصال به کانال چت');
-                });
-
-                this.currentChannel.bind('client-message', (data) => {
-                    console.log('📨 New message received in admin:', data);
+                this.channel.bind('new-message', (data) => {
+                    console.log('New message received:', data);
                     
-                    // فقط پیام‌های کاربر را نمایش دهید (نه پیام‌های ادمین)
-                    if (this.currentSession && 
-                        this.currentSession.session_id === sessionId && 
-                        data.type !== 'admin') {
-                        
-                        // بارگذاری مجدد پیام‌ها برای نمایش همه پیام‌ها
+                    if (this.currentSession && this.currentSession.session_id === sessionId) {
+                        // بارگذاری مجدد پیام‌ها
                         this.loadSessionMessages(sessionId);
+                        
+                        // نمایش نوتیفیکیشن
+                        if (data.type === 'user') {
+                            this.showNotification('پیام جدید', `کاربر: ${data.user_name}`);
+                        }
                     }
-                    
-                    // آپدیت لیست sessions
-                    this.loadSessions();
                 });
-
+                
+                this.channel.bind('pusher:subscription_succeeded', () => {
+                    console.log('Successfully subscribed to channel:', channelName);
+                });
+                
+                this.channel.bind('pusher:subscription_error', (error) => {
+                    console.error('Subscription error:', error);
+                });
+                
             } catch (error) {
-                console.error('❌ Subscription error:', error);
-                this.showError('خطا در عضویت کانال: ' + error.message);
+                console.error('Error subscribing to channel:', error);
+                this.showError('خطا در اتصال به کانال چت');
             }
         }
-        // متد نمایش خطا
+
+        handleNewChatNotification(data) {
+            // بارگذاری مجدد لیست جلسات
+            this.loadSessions();
+            
+            // نمایش نوتیفیکیشن دسکتاپ
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification('چت جدید', {
+                    body: `کاربر جدید: ${data.user_name}`,
+                    icon: '/wp-content/plugins/wp-live-chat/assets/images/icon.png'
+                });
+            }
+            
+            // نمایش نوتیفیکیشن در صفحه
+            this.showNotification('چت جدید', `کاربر جدید: ${data.user_name}`);
+        }
+
+        // متدهای کمکی جدید
         showError(message) {
-            console.error('💥 Error:', message);
+            this.showMessage(message, 'error');
+        }
+
+        showSuccess(message) {
+            this.showMessage(message, 'success');
+        }
+
+        showMessage(message, type = 'info') {
+            const $container = $('<div class="admin-message-alert"></div>')
+                .addClass(`alert-${type}`)
+                .text(message)
+                .prependTo('#chat-admin-app');
             
-            // نمایش خطا به کاربر
-            const errorHtml = `
-                <div class="notice notice-error inline" style="margin: 10px 0; padding: 10px;">
-                    <p><strong>خطا:</strong> ${message}</p>
+            setTimeout(() => $container.fadeOut(300, () => $container.remove()), 5000);
+        }
+
+        showNotification(title, body) {
+            const $notification = $(`
+                <div class="notification-toast">
+                    <div class="notification-title">${title}</div>
+                    <div class="notification-body">${body}</div>
                 </div>
-            `;
+            `).appendTo('body');
             
-            // حذف خطاهای قبلی
-            $('.notice.notice-error').remove();
-            $('.wrap').prepend(errorHtml);
-            
-            // حذف خودکار خطا بعد از 5 ثانیه
-            setTimeout(() => {
-                $('.notice.notice-error').fadeOut();
-            }, 5000);
+            setTimeout(() => $notification.fadeOut(300, () => $notification.remove()), 5000);
         }
 
         formatTime(timestamp) {
@@ -523,32 +411,42 @@
             
             try {
                 const date = new Date(timestamp);
+                if (isNaN(date.getTime())) {
+                    // اگر timestamp معتبر نیست، از روش جایگزین استفاده کن
+                    return timestamp;
+                }
+                
                 return date.toLocaleTimeString('fa-IR', {
                     hour: '2-digit',
-                    minute: '2-digit'
+                    minute: '2-digit',
+                    hour12: false
                 });
             } catch (e) {
                 return '--:--';
             }
         }
 
-        truncateText(text, maxLength) {
-            if (!text) return '';
-            if (text.length <= maxLength) return text;
-            return text.substring(0, maxLength) + '...';
-        }
-
         escapeHtml(text) {
-            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
         }
     }
 
-    // راه‌اندازی زمانی که DOM آماده است
+    // Initialize on document ready
     $(document).ready(function() {
-        window.wpLiveChatAdminApp = new WPLiveChatAdmin();
+        // بررسی وجود config
+        if (!window.wpLiveChatAdmin) {
+            console.error('WP Live Chat Admin configuration not found');
+            return;
+        }
+        
+        try {
+            window.wpLiveChatAdminApp = new WPLiveChatAdmin();
+            console.log('WP Live Chat Admin initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize WP Live Chat Admin:', error);
+        }
     });
 
 })(jQuery);

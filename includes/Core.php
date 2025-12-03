@@ -1,35 +1,48 @@
 <?php
-
 namespace WP_Live_Chat;
 
 class Core {
     
     public function init(): void {
-        // هسته اصلی سیستم - می‌تواند بعداً گسترش یابد
         add_action('wp_live_chat_loaded', [$this, 'on_loaded']);
         add_action('wp_live_chat_cleanup', [$this, 'cleanup_old_data']);
-
     }
-
+    
     public function cleanup_old_data(): void {
-        /** @var Database $database */
-        $database = Plugin::get_instance()->get_service('database');
-        $deleted_count = $database->cleanup_old_sessions(30); // حذف sessions قدیمی‌تر از 30 روز
+        global $wpdb;
         
-        if ($deleted_count > 0) {
-            error_log("WP Live Chat: Cleaned up $deleted_count old sessions");
-        }
+        $sessions_table = $wpdb->prefix . 'wp_live_chat_sessions';
+        $messages_table = $wpdb->prefix . 'wp_live_chat_messages';
+        
+        $days = get_option('wp_live_chat_auto_cleanup', 30);
+        $cutoff_date = date('Y-m-d H:i:s', strtotime("-{$days} days"));
+        
+        // Delete old sessions
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$sessions_table} 
+            WHERE last_activity < %s 
+            AND status != 'active'",
+            $cutoff_date
+        ));
+        
+        // Delete orphaned messages
+        $wpdb->query("DELETE m FROM {$messages_table} m 
+            LEFT JOIN {$sessions_table} s ON m.session_id = s.session_id 
+            WHERE s.session_id IS NULL");
     }
     
     public function on_loaded(): void {
-        // اقدامات پس از بارگذاری کامل افزونه
         $this->check_dependencies();
     }
     
     private function check_dependencies(): void {
-        if (!class_exists('Pusher\\Pusher')) {
+        if (!class_exists('Pusher\Pusher')) {
             add_action('admin_notices', function() {
-                echo '<div class="error"><p>WP Live Chat: کتابخانه Pusher یافت نشد.</p></div>';
+                ?>
+                <div class="notice notice-error">
+                    <p><?php _e('WP Live Chat: کتابخانه Pusher یافت نشد. لطفا composer install را اجرا کنید.', 'wp-live-chat'); ?></p>
+                </div>
+                <?php
             });
         }
     }

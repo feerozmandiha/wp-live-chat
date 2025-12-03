@@ -1,23 +1,16 @@
 <?php
-
 namespace WP_Live_Chat;
 
 class Logger {
     
-    private static $instance = null;
     private $log_file;
     private $enabled;
     
-    public static function get_instance(): self {
-        return new self();
-    }
-    
-    public function __construct() {
+    public function init(): void {
         $upload_dir = wp_upload_dir();
         $this->log_file = $upload_dir['basedir'] . '/wp-live-chat/debug.log';
         $this->enabled = defined('WP_DEBUG') && WP_DEBUG;
         
-        // ایجاد پوشه لاگ
         wp_mkdir_p(dirname($this->log_file));
     }
     
@@ -50,28 +43,5 @@ class Logger {
     
     public function warning(string $message, array $context = []): void {
         $this->log('warning', $message, $context);
-    }
-    
-    public function debug(string $message, array $context = []): void {
-        $this->log('debug', $message, $context);
-    }
-    
-    public function get_logs(int $lines = 100): array {
-        if (!file_exists($this->log_file)) {
-            return [];
-        }
-        
-        $content = file_get_contents($this->log_file);
-        $log_entries = explode("\n", $content);
-        $log_entries = array_filter($log_entries);
-        
-        return array_slice($log_entries, -$lines);
-    }
-    
-    public function clear_logs(): bool {
-        if (file_exists($this->log_file)) {
-            return file_put_contents($this->log_file, '') !== false;
-        }
-        return true;
     }
 }
