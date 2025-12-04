@@ -36,8 +36,15 @@ class Plugin {
             $class_name = str_replace($namespace, '', $class);
             $file_path = WP_LIVE_CHAT_PLUGIN_PATH . 'includes/' . str_replace('\\', '/', $class_name) . '.php';
             
+            // همچنین چک کردن برای فایل‌های داخل subdirectories
             if (file_exists($file_path)) {
                 require_once $file_path;
+            } else {
+                // اگر فایل پیدا نشد، در subdirectories جستجو کن
+                $file_path = WP_LIVE_CHAT_PLUGIN_PATH . 'includes/' . $class_name . '.php';
+                if (file_exists($file_path)) {
+                    require_once $file_path;
+                }
             }
         });
     }
@@ -61,6 +68,7 @@ class Plugin {
             'logger' => Logger::class,
             'cache' => Cache_Manager::class,
             'rest_api' => REST_API::class,
+            'chat_frontend' => Chat_Frontend::class,
         ];
         
         foreach ($services as $key => $class) {
@@ -81,7 +89,11 @@ class Plugin {
         if (!wp_next_scheduled('wp_live_chat_cleanup')) {
             wp_schedule_event(time(), 'daily', 'wp_live_chat_cleanup');
         }
-        
+
+            // اضافه کردن options اولیه
+        add_option('wp_live_chat_enable_chat', true);
+        add_option('wp_live_chat_pusher_cluster', 'mt1');
+            
         update_option('wp_live_chat_version', WP_LIVE_CHAT_VERSION);
         update_option('wp_live_chat_installed_time', time());
         

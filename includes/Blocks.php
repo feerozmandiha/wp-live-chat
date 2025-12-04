@@ -12,9 +12,10 @@ class Blocks {
             return;
         }
         
-        register_block_type(WP_LIVE_CHAT_PLUGIN_PATH . 'blocks/chat-widget', [
-            'render_callback' => [$this, 'render_chat_widget_block']
+        register_block_type('wp-live-chat/chat-widget', [
+        'render_callback' => [$this, 'render_chat_widget_block']
         ]);
+
     }
     
     public function render_chat_widget_block($attributes): string {

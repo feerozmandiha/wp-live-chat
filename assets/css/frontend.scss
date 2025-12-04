@@ -139,12 +139,12 @@ $border-radius: 16px;
   z-index: 1000;
 
   @media (max-width: 767px) {
-    width: calc(100vw - 40px);
-    height: 80vh;
-    border-radius: 12px;
+    // width: calc(100vw - 40px);
+    // height: 80vh;
+    // border-radius: 12px;
     position: fixed;
     left: 20px;
-    right: 20px;
+    right: auto;
     bottom: 20px;
     top: auto;
   }
@@ -180,8 +180,22 @@ $border-radius: 16px;
   @media (max-width: 767px) {
     .chat-widget {
       left: 20px;
-      right: 20px;
+      right: auto;
     }
+    .chat-messages {
+      .message {
+        padding: 8px 10px;
+        .message-content {
+          p {
+            margin: 0;
+            line-height: 1.5;
+            word-wrap: break-word;
+            font-size: 11px;
+          }
+        }
+      }
+    }
+
   }
 }
 
@@ -220,7 +234,7 @@ $border-radius: 16px;
 
 // Chat Header (بهبود یافته)
 .chat-header {
-  padding: 18px 20px;
+  padding: 10px 10px;
   background: linear-gradient(135deg, $primary-color, $primary-dark);
   color: white;
   border-radius: $border-radius $border-radius 0 0;
@@ -240,6 +254,7 @@ $border-radius: 16px;
       display: flex;
       align-items: center;
       font-size: 13px;
+      gap: 5px;
 
       .status-dot {
         width: 8px;
@@ -294,7 +309,7 @@ $border-radius: 16px;
 // Chat Messages (شبیه ادمین)
 .chat-messages {
   flex: 1;
-  padding: 20px;
+  padding: 10px;
   overflow-y: auto;
   background: $background-light;
   display: flex;
@@ -410,11 +425,12 @@ $border-radius: 16px;
 
 // Chat Input Area (بهبود یافته)
 .chat-input-area {
-  padding: 20px;
+  padding: 10px;
   border-top: 1px solid $border-color;
   background: white;
   border-radius: 0 0 $border-radius $border-radius;
   position: relative;
+  display: block !important;
 
   textarea {
     width: 100%;
@@ -423,7 +439,7 @@ $border-radius: 16px;
     resize: vertical;
     border: 1px solid $border-color;
     border-radius: 10px;
-    padding: 12px 15px;
+    // padding: 12px 15px;
     font-family: inherit;
     font-size: 14px;
     line-height: 1.5;
@@ -444,7 +460,7 @@ $border-radius: 16px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: 12px;
+    // margin-top: 12px;
 
     .char-counter {
       font-size: 12px;
@@ -464,6 +480,7 @@ $border-radius: 16px;
       padding: 10px 24px;
       border-radius: 8px;
       cursor: pointer;
+      font-family: inherit;
       font-weight: 600;
       font-size: 14px;
       transition: all 0.3s;
@@ -601,7 +618,7 @@ $border-radius: 16px;
 
 // Alternatives Section (بهبود یافته)
 .chat-alternatives {
-  padding: 18px 20px;
+  padding: 10px 10px;
   border-top: 1px solid $border-color;
   background: linear-gradient(135deg, #f9f9f9, #f0f0f0);
   text-align: center;
@@ -623,7 +640,7 @@ $border-radius: 16px;
 
     .contact-btn {
       flex: 1;
-      padding: 12px;
+      // padding: 12px;
       border-radius: 8px;
       text-align: center;
       text-decoration: none;
@@ -846,4 +863,66 @@ $border-radius: 16px;
       border-right-color: darken($info-color, 15%);
     }
   }
+}
+
+/* در frontend.scss */
+.input-hint {
+    display: block;
+    font-size: 11px;
+    color: #666;
+    margin-top: 5px;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border-right: 3px solid #007cba;
+    animation: fadeIn 0.3s ease;
+}
+
+.input-error-message {
+    display: none;
+    font-size: 11px;
+    color: #dc3232;
+    margin-top: 5px;
+    margin-bottom: 8px;
+    padding: 6px 10px;
+    background: #fff5f5;
+    border-radius: 4px;
+    border: 1px solid #ffcccc;
+    animation: shake 0.3s ease;
+}
+
+.input-error {
+    border-color: #dc3232 !important;
+    box-shadow: 0 0 0 1px rgba(220, 50, 50, 0.2) !important;
+    animation: pulseError 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
+
+@keyframes pulseError {
+    0%, 100% { border-color: #dc3232; }
+    50% { border-color: #ff6b6b; }
+}
+
+/* استایل‌های مختلف برای انواع input */
+.phone-input-hint {
+    border-right-color: #25D366; /* سبز واتساپ */
+}
+
+.name-input-hint {
+    border-right-color: #ffb900; /* زرد */
+}
+
+.general-input-hint {
+    border-right-color: #007cba; /* آبی */
 }

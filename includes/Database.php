@@ -20,8 +20,14 @@ class Database {
         
         $this->create_chat_sessions_table();
         $this->create_chat_messages_table();
+        $this->create_admin_sessions_table(); // اصلاح شده: حذف $ اضافی
         
         update_option('wp_live_chat_db_version', '1.0.0');
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Tables created successfully');
+        }
     }
     
     private function create_chat_sessions_table(): void {
@@ -53,6 +59,11 @@ class Database {
         ) {$this->charset_collate};";
         
         dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
+        }
     }
     
     private function create_chat_messages_table(): void {
@@ -79,6 +90,37 @@ class Database {
         ) {$this->charset_collate};";
         
         dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
+        }
+    }
+
+    private function create_admin_sessions_table(): void {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_admin_sessions';
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            admin_id BIGINT(20) UNSIGNED NOT NULL,
+            status ENUM('online', 'away', 'offline') DEFAULT 'offline',
+            current_session_id VARCHAR(100),
+            last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY admin_id (admin_id),
+            KEY status (status),
+            KEY last_activity (last_activity)
+        ) {$this->charset_collate};";
+        
+        dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
+        }
     }
     
     public function save_message(array $message_data): int {

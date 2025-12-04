@@ -11,7 +11,11 @@ module.exports = {
     },
     output: {
         path: path.resolve(__dirname, 'build'),
-        filename: 'js/[name].js'
+        filename: 'js/[name].js',
+        library: {
+            name: '[name]',
+            type: 'umd'
+        }
     },
     module: {
         rules: [

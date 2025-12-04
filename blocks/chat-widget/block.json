@@ -1,5 +1,5 @@
 {
-    "name": "wp-live-chat",
+    "name": "wp-live-chat/chat-widget",
     "version": "1.1.0",
     "description": "Live Chat Plugin for WordPress",
     "main": "index.js",
