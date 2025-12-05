@@ -129,6 +129,7 @@ class Chat_Admin {
         ]);
     }
     
+// در Chat_Admin.php
     public function handle_get_chat_sessions(): void {
         check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
         
@@ -140,13 +141,44 @@ class Chat_Admin {
             $database = Plugin::get_instance()->get_service('database');
             $sessions = $database->get_active_sessions();
             
-            // Add additional info
+            // اضافه کردن تعداد پیام‌های خوانده نشده
             foreach ($sessions as &$session) {
-                $session['unread_count'] = 0;
+                $session['unread_count'] = $database->get_unread_count($session['session_id'], get_current_user_id());
+                $session['has_unread'] = $session['unread_count'] > 0;
                 $session['last_message_time'] = $session['last_activity'];
+                
+                // علامت گذاری جلسات با پیام خوانده نشده
+                if ($session['has_unread']) {
+                    $session['highlight_class'] = 'has-unread-messages';
+                    $session['badge_text'] = $session['unread_count'] . ' پیام خوانده نشده';
+                }
             }
             
             wp_send_json_success($sessions);
+        } catch (\Exception $e) {
+            wp_send_json_error($e->getMessage());
+        }
+    }
+
+    // متد جدید برای علامت گذاری پیام‌ها به عنوان خوانده شده
+    public function handle_mark_as_read(): void {
+        check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('دسترسی غیرمجاز');
+        }
+        
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        $message_ids = isset($_POST['message_ids']) ? array_map('intval', (array)$_POST['message_ids']) : [];
+        
+        try {
+            $database = Plugin::get_instance()->get_service('database');
+            $result = $database->mark_messages_as_read($session_id, get_current_user_id(), $message_ids);
+            
+            wp_send_json_success([
+                'marked_count' => $result,
+                'session_id' => $session_id
+            ]);
         } catch (\Exception $e) {
             wp_send_json_error($e->getMessage());
         }

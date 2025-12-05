@@ -104,6 +104,16 @@ $warning-color: #ffb900;
     }
 }
 
+// در sessions list
+.session-meta {
+    .unread-text {
+        color: #dc3232;
+        font-weight: 600;
+        font-size: 11px;
+        margin-right: 8px;
+    }
+}
+
 // Chat Panel
 .chat-panel {
     border: 1px solid #ccc;
@@ -355,6 +365,31 @@ $warning-color: #ffb900;
         min-width: 20px;
         text-align: center;
         animation: pulse 2s infinite;
+    }
+
+        &.has-unread {
+        border-left: 4px solid #dc3232;
+        background: linear-gradient(90deg, #fff5f5, #ffffff);
+        
+            .session-user {
+                font-weight: 700;
+                color: #d32f2f;
+            }
+            
+            .unread-badge {
+                background: #dc3232;
+                animation: pulse-alert 1.5s infinite;
+            }
+    }
+    
+    .unread-indicator {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        background: #dc3232;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: blink 2s infinite;
     }
 }
 

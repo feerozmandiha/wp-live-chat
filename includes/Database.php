@@ -122,6 +122,105 @@ class Database {
             error_log('WP Live Chat: Created table: ' . $table_name);
         }
     }
+
+    // در فایل includes/Database.php یا ایجاد فایل جدید
+    public function create_unread_messages_table() {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_unread';
+        $charset_collate = $wpdb->get_charset_collate();
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            session_id varchar(100) NOT NULL,
+            message_id bigint(20) NOT NULL,
+            admin_id bigint(20) DEFAULT 0,
+            is_read tinyint(1) DEFAULT 0,
+            read_at datetime DEFAULT NULL,
+            created_at datetime DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY session_id (session_id),
+            KEY admin_id (admin_id),
+            KEY is_read (is_read)
+        ) $charset_collate;";
+        
+        require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
+        dbDelta($sql);
+    }
+
+    // در Database.php
+    public function get_unread_count($session_id, $admin_id = 0) {
+        global $wpdb;
+        
+        $table = $wpdb->prefix . 'wp_live_chat_unread';
+        $messages_table = $wpdb->prefix . 'wp_live_chat_messages';
+        
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(DISTINCT m.id) 
+            FROM {$messages_table} m
+            LEFT JOIN {$table} u ON u.message_id = m.id AND u.admin_id = %d
+            WHERE m.session_id = %s 
+            AND m.message_type = 'user'
+            AND (u.id IS NULL OR u.is_read = 0)",
+            $admin_id,
+            $session_id
+        ));
+    }
+
+    public function mark_messages_as_read($session_id, $admin_id, $message_ids = []) {
+        global $wpdb;
+        
+        $table = $wpdb->prefix . 'wp_live_chat_unread';
+        
+        if (empty($message_ids)) {
+            // همه پیام‌های این session را علامت بزن
+            $messages = $wpdb->get_col($wpdb->prepare(
+                "SELECT id FROM {$wpdb->prefix}wp_live_chat_messages 
+                WHERE session_id = %s AND message_type = 'user'",
+                $session_id
+            ));
+            
+            if (empty($messages)) return 0;
+            
+            $message_ids = $messages;
+        }
+        
+        $marked = 0;
+        foreach ($message_ids as $message_id) {
+            // بررسی وجود رکورد
+            $exists = $wpdb->get_var($wpdb->prepare(
+                "SELECT id FROM {$table} 
+                WHERE message_id = %d AND admin_id = %d",
+                $message_id,
+                $admin_id
+            ));
+            
+            if ($exists) {
+                // به‌روزرسانی
+                $wpdb->update(
+                    $table,
+                    ['is_read' => 1, 'read_at' => current_time('mysql')],
+                    ['message_id' => $message_id, 'admin_id' => $admin_id]
+                );
+            } else {
+                // درج جدید
+                $wpdb->insert(
+                    $table,
+                    [
+                        'session_id' => $session_id,
+                        'message_id' => $message_id,
+                        'admin_id' => $admin_id,
+                        'is_read' => 1,
+                        'read_at' => current_time('mysql')
+                    ]
+                );
+            }
+            
+            $marked++;
+        }
+        
+        return $marked;
+    }
     
     public function save_message(array $message_data): int {
         global $wpdb;

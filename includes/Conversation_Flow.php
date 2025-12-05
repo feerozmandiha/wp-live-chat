@@ -95,7 +95,16 @@ class Conversation_Flow {
     }
 
     public function get_full_state(): array {
-        $current_step = $this->get_current_step();
+        $current_step = $this->get_current_step(); // از این متد استفاده کن نه $this->current_step
+        
+        // مطمئن شو که stage درست تنظیم شده
+        if ($current_step === 'check_admin_status') {
+            if ($this->is_admin_online()) {
+                $current_step = 'chat_active';
+            } else {
+                $current_step = 'waiting_for_admin';
+            }
+        }
         
         return [
             'current_step' => $current_step,
@@ -106,9 +115,11 @@ class Conversation_Flow {
             'input_hint' => $this->get_input_hint($current_step),
             'message' => $this->get_step_message($current_step),
             'user_data_completed' => $this->user_data_completed(),
-            'is_admin_online' => $this->is_admin_online()
+            'is_admin_online' => $this->is_admin_online(),
+            'session_id' => $this->session_id,
+            'timestamp' => current_time('timestamp')
         ];
-    }    
+    }   
     /**
      * دریافت نوع ورودی مورد نیاز برای مرحله فعلی
      *

@@ -156,10 +156,17 @@
         }
 
         async selectSession(session) {
-            $('.session-item').removeClass('active');
-            $(`.session-item[data-session-id="${session.session_id}"]`).addClass('active');
+            $('.session-item').removeClass('active has-unread');
+            $(`.session-item[data-session-id="${session.session_id}"]`)
+                .addClass('active')
+                .removeClass('has-unread');
             
             this.currentSession = session;
+
+                        // علامت گذاری پیام‌ها به عنوان خوانده شده
+            if (session.unread_count > 0) {
+                await this.markSessionAsRead(session.session_id);
+            }
             
             $('#current-session-title').text(session.user_name || 'کاربر');
             $('#session-status').text(session.status === 'active' ? 'آنلاین' : 'آفلاین')
@@ -172,6 +179,28 @@
             await this.loadSessionMessages(session.session_id);
             this.subscribeToSession(session.session_id);
         }
+
+        async markSessionAsRead(sessionId) {
+            try {
+                await $.ajax({
+                    url: this.config.ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'mark_session_as_read',
+                        nonce: this.config.nonce,
+                        session_id: sessionId
+                    }
+                });
+                
+                // به‌روزرسانی UI
+                $(`.session-item[data-session-id="${sessionId}"]`)
+                    .find('.unread-badge')
+                    .remove();
+                    
+            } catch (error) {
+                console.error('Error marking session as read:', error);
+            }
+        } 
 
         async loadSessionMessages(sessionId) {
             try {

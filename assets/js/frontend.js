@@ -36,6 +36,23 @@ class ConversationFlowManager {
         this.inputType = 'general_message';
         this.inputPlaceholder = '';
         this.inputHint = '';
+        this.historyLoadAttempted = false;
+
+        this.pusherEnabled = true;
+        this.retryCount = 0;
+        this.maxRetries = 5;
+        this.pollingInterval = null;
+        this.isPolling = false;
+        this.pusherChannel = null;
+        this.pusherAdminChannel = null;
+        this.pusherPresenceChannel = null;
+        this.adminOnline = false;
+        this.connectionHealth = {
+            lastCheck: null,
+            status: 'unknown',
+            failures: 0
+        };
+
         
         console.log('✅ ConversationFlowManager created');
         
@@ -636,24 +653,59 @@ class ConversationFlowManager {
 
     // ---------- مدیریت باز کردن چت ----------
     openChat() {
-    this.$container.removeClass('wp-live-chat-hidden');
-    this.unreadCount = 0;
-    this.updateNotificationBadge(0);
-    
-    // اگر تاریخچه بارگذاری نشده، بارگذاری کن
-    if (!this.historyLoaded && !this.isHistoryLoading) {
-        this.isHistoryLoading = true;
-        this.loadHistoryAndScroll();
-    } else {
-        // فقط اسکرول کن
-        setTimeout(() => {
-        this.scrollToBottom(true, true);
-        this.$textarea.focus();
-        }, 100);
+        if (this.isOpening) return; // جلوگیری از باز کردن همزمان
+        this.isOpening = true;
+        
+        this.$container.removeClass('wp-live-chat-hidden');
+        this.unreadCount = 0;
+        this.updateNotificationBadge(0);
+        
+        // فقط یکبار بارگذاری کن
+        if (!this.historyLoaded && !this.isHistoryLoading && !this.historyLoadAttempted) {
+            this.historyLoadAttempted = true;
+            this.isHistoryLoading = true;
+            this.loadHistoryAndScroll();
+        } else {
+            // فقط اسکرول کن
+            setTimeout(() => {
+                this.scrollToBottom(true, true);
+                this.$textarea.focus();
+            }, 100);
+        }
+        
+        this.sendChatOpenedEvent();
+        setTimeout(() => { this.isOpening = false; }, 500);
     }
-    
-    // فرستادن event به Pusher برای اطلاع ادمین
-    this.sendChatOpenedEvent();
+
+    // در تابع loadHistoryAndScroll()
+    loadHistoryAndScroll() {
+        if (this.historyLoaded) return;
+        
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'get_chat_history',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                limit: 50
+            },
+            timeout: 15000 // افزایش timeout
+        })
+        .done((response) => {
+            if (response.success) {
+                this.historyLoaded = true;
+                this.renderHistory(response.data);
+            }
+        })
+        .fail((error) => {
+            console.error('Failed to load history:', error);
+            // حالت fallback: بارگذاری از localStorage
+            this.loadFromLocalStorage();
+        })
+        .always(() => {
+            this.isHistoryLoading = false;
+        });
     }
 
     // ---------- مدیریت بستن چت ----------
@@ -693,64 +745,432 @@ class ConversationFlowManager {
     }
 
     // ---------- Pusher ----------
+    // متد initPusher بهبود یافته
     initPusher() {
-    if (!this.pusherKey || typeof Pusher === 'undefined') {
-        this.setConnectedStatus('offline');
-        this.showAlert('سرویس چت در حال حاضر در دسترس نیست', 'error');
-        return;
-    }
-
-    try {
-        Pusher.logToConsole = false;
-
-        this.pusher = new Pusher(this.pusherKey, {
-        cluster: this.pusherCluster || 'mt1',
-        forceTLS: true,
-        authEndpoint: this.ajaxurl,
-        auth: {
-            params: {
-            action: 'pusher_auth',
-            nonce: this.nonce,
-            session_id: this.sessionId,
-            user_name: this.currentUser.name || 'کاربر'
-            }
-        },
-        enabledTransports: ['ws', 'wss', 'xhr_streaming', 'xhr_polling']
-        });
-
-        const channelName = `private-chat-${this.sessionId}`;
-        const channel = this.pusher.subscribe(channelName);
-
-        this.pusher.connection.bind('state_change', (states) => {
-        if (states.current === 'connected') {
-            this.setConnectedStatus('online');
-            this.showAlert('اتصال برقرار شد', 'success', 3000);
-        } else if (states.current === 'disconnected' || states.current === 'failed') {
+        // بررسی وجود پوشر کی و کتابخانه
+        if (!this.pusherKey || typeof Pusher === 'undefined') {
             this.setConnectedStatus('offline');
+            this.showAlert('سرویس چت در حال حاضر در دسترس نیست', 'error', 5000);
+            console.error('Pusher key or library not found');
+            return;
         }
-        });
 
-        channel.bind('new-message', (payload) => {
-        this.onIncomingMessage(payload);
-        });
+        try {
+            // غیرفعال کردن لاگ پوشر در حالت پروداکشن
+            if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+                Pusher.logToConsole = false;
+            }
 
-        channel.bind('admin-typing', () => {
-        this.showTypingIndicator();
-        });
+            // تنظیمات بهینه‌شده پوشر
+            this.pusher = new Pusher(this.pusherKey, {
+                cluster: this.pusherCluster || 'mt1',
+                forceTLS: true,
+                authEndpoint: this.ajaxurl,
+                auth: {
+                    params: {
+                        action: 'pusher_auth',
+                        nonce: this.nonce,
+                        session_id: this.sessionId,
+                        user_name: this.currentUser.name || 'کاربر',
+                        timestamp: Date.now()
+                    },
+                    headers: {
+                        'X-WP-Nonce': this.nonce
+                    }
+                },
+                // بهینه‌سازی انتقال‌ها
+                enabledTransports: ['ws', 'wss'],
+                disabledTransports: ['xhr_streaming', 'xhr_polling'],
+                
+                // تنظیمات timeout برای جلوگیری از قطع ارتباط
+                activityTimeout: 120000, // 2 دقیقه
+                pongTimeout: 30000, // 30 ثانیه
+                
+                // بهینه‌سازی‌های دیگر
+                disableStats: true, // غیرفعال کردن آمار برای بهبود کارایی
+                wsHost: 'ws-' + (this.pusherCluster || 'mt1') + '.pusher.com',
+                wssPort: 443,
+                wsPort: 80
+            });
 
-        channel.bind('admin-stopped-typing', () => {
-        this.hideTypingIndicator();
-        });
+            // مدیریت وضعیت اتصال
+            this.pusher.connection.bind('state_change', (states) => {
+                console.log('Pusher connection state changed:', states.previous, '->', states.current);
+                
+                switch(states.current) {
+                    case 'connected':
+                        this.setConnectedStatus('online');
+                        this.retryCount = 0;
+                        this.connected = true;
+                        this.showAlert('اتصال برقرار شد', 'success', 3000);
+                        
+                        // ارسال event اتصال موفق
+                        this.sendConnectionEvent('connected');
+                        break;
+                        
+                    case 'connecting':
+                        this.setConnectedStatus('connecting');
+                        this.connected = false;
+                        console.log('Connecting to Pusher...');
+                        break;
+                        
+                    case 'disconnected':
+                        this.setConnectedStatus('offline');
+                        this.connected = false;
+                        console.log('Disconnected from Pusher');
+                        
+                        // تلاش برای اتصال مجدد
+                        this.attemptReconnect();
+                        break;
+                        
+                    case 'failed':
+                        this.setConnectedStatus('offline');
+                        this.connected = false;
+                        this.showAlert('خطا در اتصال به سرویس چت', 'error', 5000);
+                        console.error('Pusher connection failed');
+                        
+                        // تلاش برای اتصال مجدد
+                        this.attemptReconnect();
+                        break;
+                        
+                    case 'unavailable':
+                        this.setConnectedStatus('offline');
+                        this.connected = false;
+                        console.warn('Pusher service unavailable');
+                        
+                        // استفاده از fallback یا تلاش مجدد
+                        this.initPollingFallback();
+                        break;
+                }
+            });
 
-        const adminChannel = this.pusher.subscribe('admin-notifications');
-        adminChannel.bind('admin-connected', () => {
-        this.showAlert('پشتیبان آنلاین شد', 'info', 3000);
-        });
+            // هندل رویدادهای خطا
+            this.pusher.connection.bind('error', (err) => {
+                console.error('Pusher connection error:', err);
+                
+                // اگر خطای خاصی رخ داد، reconnect کن
+                if (err.type === 'WebSocketError' || err.error) {
+                    this.attemptReconnect();
+                }
+            });
 
-    } catch (err) {
-        this.setConnectedStatus('offline');
-        this.showAlert('خطا در اتصال به سرویس چت', 'error');
+            // سابسکرایب به کانال چت خصوصی
+            const channelName = `private-chat-${this.sessionId}`;
+            const channel = this.pusher.subscribe(channelName);
+
+            // هندل رویدادهای سابسکرایب
+            channel.bind('pusher:subscription_succeeded', () => {
+                console.log(`Successfully subscribed to channel: ${channelName}`);
+                
+                // ارسال event سابسکرایب موفق
+                this.sendSubscriptionEvent('succeeded', channelName);
+            });
+
+            channel.bind('pusher:subscription_error', (error) => {
+                console.error(`Subscription error for channel ${channelName}:`, error);
+                
+                // تلاش مجدد برای سابسکرایب
+                setTimeout(() => {
+                    if (this.pusher && this.pusher.connection.state === 'connected') {
+                        console.log(`Retrying subscription to ${channelName}`);
+                        this.pusher.subscribe(channelName);
+                    }
+                }, 5000);
+            });
+
+            // هندل رویدادهای پیام
+            channel.bind('new-message', (payload) => {
+                console.log('New message received via Pusher:', payload);
+                this.onIncomingMessage(payload);
+            });
+
+            channel.bind('admin-typing', () => {
+                console.log('Admin typing indicator received');
+                this.showTypingIndicator();
+            });
+
+            channel.bind('admin-stopped-typing', () => {
+                console.log('Admin stopped typing indicator received');
+                this.hideTypingIndicator();
+            });
+
+            channel.bind('message-read', (data) => {
+                console.log('Message read by admin:', data);
+                this.markMessageAsRead(data.message_id);
+            });
+
+            // سابسکرایب به کانال نوتیفیکیشن ادمین
+            const adminChannel = this.pusher.subscribe('admin-notifications');
+            
+            adminChannel.bind('admin-connected', (data) => {
+                console.log('Admin connected notification:', data);
+                this.showAlert('پشتیبان آنلاین شد', 'info', 3000);
+                
+                // به‌روزرسانی وضعیت ادمین
+                this.adminOnline = true;
+                this.updateAdminStatus(true);
+            });
+
+            adminChannel.bind('admin-disconnected', (data) => {
+                console.log('Admin disconnected notification:', data);
+                this.showAlert('پشتیبان آفلاین شد', 'warning', 3000);
+                
+                // به‌روزرسانی وضعیت ادمین
+                this.adminOnline = false;
+                this.updateAdminStatus(false);
+            });
+
+            adminChannel.bind('user-info-completed', (data) => {
+                console.log('User info completed:', data);
+                // اگر لازم است کاری انجام شود
+            });
+
+            // سابسکرایب به کانال presence برای کاربران آنلاین
+            const presenceChannel = this.pusher.subscribe('presence-chat');
+            
+            presenceChannel.bind('pusher:member_added', (member) => {
+                console.log('Member added to chat:', member);
+            });
+
+            presenceChannel.bind('pusher:member_removed', (member) => {
+                console.log('Member removed from chat:', member);
+            });
+
+            // هندل رویداد ping/pong برای ماندگاری ارتباط
+            setInterval(() => {
+                if (this.pusher && this.pusher.connection.state === 'connected') {
+                    // ارسال ping برای ماندگاری ارتباط
+                    this.sendPing();
+                }
+            }, 45000); // هر 45 ثانیه
+
+            // ذخیره reference به کانال‌ها
+            this.pusherChannel = channel;
+            this.pusherAdminChannel = adminChannel;
+            this.pusherPresenceChannel = presenceChannel;
+
+            console.log('Pusher initialized successfully');
+
+        } catch (err) {
+            console.error('Error initializing Pusher:', err);
+            this.setConnectedStatus('offline');
+            this.connected = false;
+            
+            // نمایش خطای مناسب
+            let errorMessage = 'خطا در اتصال به سرویس چت';
+            if (err.message && err.message.includes('app key')) {
+                errorMessage = 'تنظیمات اتصال چت نادرست است';
+            } else if (err.message && err.message.includes('network')) {
+                errorMessage = 'خطای شبکه در اتصال به چت';
+            }
+            
+            this.showAlert(errorMessage, 'error', 5000);
+            
+            // تلاش برای اتصال مجدد
+            setTimeout(() => this.attemptReconnect(), 10000);
+        }
     }
+
+    // متدهای کمکی جدید
+    attemptReconnect() {
+        // محدودیت تعداد تلاش‌های مجدد
+        this.maxRetries = 5;
+        
+        if (this.retryCount >= this.maxRetries) {
+            console.log('Max reconnection attempts reached. Switching to polling mode.');
+            this.showAlert('اتصال مستقیم ناموفق بود. سیستم در حالت آفلاین کار می‌کند.', 'warning', 5000);
+            this.initPollingFallback();
+            return;
+        }
+        
+        this.retryCount++;
+        const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000); // Exponential backoff
+        
+        console.log(`Attempting reconnection in ${delay}ms (attempt ${this.retryCount}/${this.maxRetries})`);
+        
+        this.showAlert(`تلاش برای اتصال مجدد... (${this.retryCount}/${this.maxRetries})`, 'info', 2000);
+        
+        setTimeout(() => {
+            if (!this.connected && this.pusherKey) {
+                console.log('Starting reconnection attempt...');
+                
+                // بستن connection قبلی اگر وجود دارد
+                if (this.pusher && this.pusher.connection) {
+                    try {
+                        this.pusher.disconnect();
+                    } catch (e) {
+                        console.warn('Error disconnecting previous Pusher instance:', e);
+                    }
+                }
+                
+                // راه‌اندازی مجدد
+                this.initPusher();
+            }
+        }, delay);
+    }
+
+    initPollingFallback() {
+        console.log('Initializing polling fallback');
+        
+        // غیرفعال کردن پوشر
+        this.pusherEnabled = false;
+        this.setConnectedStatus('offline');
+        
+        // راه‌اندازی polling برای دریافت پیام‌ها
+        this.pollingInterval = setInterval(() => {
+            if (!this.pusherEnabled && this.sessionId) {
+                this.pollForNewMessages();
+            }
+        }, 10000); // هر 10 ثانیه
+        
+        this.showAlert('سیستم در حالت آفلاین کار می‌کند. پیام‌ها با تاخیر دریافت می‌شوند.', 'warning', 5000);
+    }
+
+    pollForNewMessages() {
+        if (this.isPolling) return;
+        
+        this.isPolling = true;
+        
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'poll_messages',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                last_message_id: this.lastMessageId
+            },
+            timeout: 8000,
+            dataType: 'json'
+        })
+        .done((response) => {
+            if (response.success && response.data && response.data.messages) {
+                response.data.messages.forEach(message => {
+                    this.onIncomingMessage(message);
+                });
+                
+                // به‌روزرسانی آخرین پیام ID
+                if (response.data.messages.length > 0) {
+                    this.lastMessageId = response.data.messages[response.data.messages.length - 1].id;
+                }
+            }
+        })
+        .fail((error) => {
+            console.error('Polling error:', error);
+        })
+        .always(() => {
+            this.isPolling = false;
+        });
+    }
+
+    sendConnectionEvent(status) {
+        // ارسال event به سرور برای ثبت وضعیت اتصال
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'update_connection_status',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                status: status,
+                timestamp: Date.now()
+            },
+            timeout: 5000
+        }).fail((error) => {
+            console.warn('Failed to send connection event:', error);
+        });
+    }
+
+    sendSubscriptionEvent(status, channel) {
+        // ارسال event سابسکرایب
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'log_subscription',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                channel: channel,
+                status: status,
+                timestamp: Date.now()
+            },
+            timeout: 5000
+        }).fail((error) => {
+            console.warn('Failed to send subscription event:', error);
+        });
+    }
+
+    sendPing() {
+        // ارسال ping برای ماندگاری ارتباط
+        if (this.pusher && this.pusherChannel) {
+            try {
+                this.pusherChannel.trigger('client-ping', {
+                    session_id: this.sessionId,
+                    timestamp: Date.now()
+                });
+            } catch (e) {
+                console.warn('Error sending ping:', e);
+            }
+        }
+    }
+
+    // متد برای تمیز کردن منابع
+    cleanupPusher() {
+        console.log('Cleaning up Pusher resources');
+        
+        // توقف polling اگر فعال است
+        if (this.pollingInterval) {
+            clearInterval(this.pollingInterval);
+            this.pollingInterval = null;
+        }
+        
+        // unsubscribe از کانال‌ها
+        if (this.pusher) {
+            try {
+                if (this.pusherChannel) {
+                    this.pusher.unsubscribe(this.pusherChannel.name);
+                }
+                if (this.pusherAdminChannel) {
+                    this.pusher.unsubscribe(this.pusherAdminChannel.name);
+                }
+                if (this.pusherPresenceChannel) {
+                    this.pusher.unsubscribe(this.pusherPresenceChannel.name);
+                }
+                
+                // disconnect از پوشر
+                this.pusher.disconnect();
+            } catch (e) {
+                console.warn('Error during Pusher cleanup:', e);
+            }
+            
+            this.pusher = null;
+        }
+        
+        this.connected = false;
+        this.pusherEnabled = false;
+        this.retryCount = 0;
+    }
+
+// متد برای بررسی وضعیت اتصال
+    checkConnectionHealth() {
+        if (!this.pusher || !this.pusher.connection) {
+            return { status: 'disconnected', details: 'No Pusher instance' };
+        }
+        
+        const state = this.pusher.connection.state;
+        const lastActivity = this.pusher.connection.lastActivity;
+        const now = Date.now();
+        const inactiveTime = lastActivity ? now - lastActivity : Infinity;
+        
+        return {
+            status: state,
+            connected: state === 'connected',
+            inactiveFor: inactiveTime > 60000 ? Math.floor(inactiveTime / 1000) + ' seconds' : 'active',
+            channels: this.pusher.allChannels().map(ch => ch.name),
+            retryCount: this.retryCount,
+            pollingActive: !!this.pollingInterval,
+            pusherEnabled: this.pusherEnabled
+        };
     }
 
     // ---------- مدیریت پیام‌های ورودی ----------
@@ -1940,97 +2360,97 @@ class ConversationFlowManager {
     }
 
     // تابع بهبود یافته برای بارگذاری تاریخچه
-    loadHistoryAndScroll(forceReload = false) {
-    const self = this;
+    // loadHistoryAndScroll(forceReload = false) {
+    // const self = this;
     
-    // اگر قبلاً بارگذاری شده و forceReload false است، فقط اسکرول کن
-    if (self.messageHistory.length > 0 && !forceReload) {
-        self.scrollToBottom(true);
-        return;
-    }
+    // // اگر قبلاً بارگذاری شده و forceReload false است، فقط اسکرول کن
+    // if (self.messageHistory.length > 0 && !forceReload) {
+    //     self.scrollToBottom(true);
+    //     return;
+    // }
     
-    // نمایش loading فقط اگر پیامی نمایش داده نشده
-    if (self.$messages.find('.message').length === 0) {
-        self.$messages.html(`
-        <div class="welcome-message">
-            <p>${self._escapeHtml(self.strings.welcome || 'سلام! به پشتیبانی آنلاین خوش آمدید.')}</p>
-        </div>
-        <div class="loading-history" style="text-align:center; padding:20px; color:#666;">
-            <div class="spinner"></div>
-            <p>در حال بارگذاری تاریخچه...</p>
-        </div>
-        `);
-    }
+    // // نمایش loading فقط اگر پیامی نمایش داده نشده
+    // if (self.$messages.find('.message').length === 0) {
+    //     self.$messages.html(`
+    //     <div class="welcome-message">
+    //         <p>${self._escapeHtml(self.strings.welcome || 'سلام! به پشتیبانی آنلاین خوش آمدید.')}</p>
+    //     </div>
+    //     <div class="loading-history" style="text-align:center; padding:20px; color:#666;">
+    //         <div class="spinner"></div>
+    //         <p>در حال بارگذاری تاریخچه...</p>
+    //     </div>
+    //     `);
+    // }
     
-    $.ajax({
-        url: self.ajaxurl,
-        type: 'POST',
-        data: {
-        action: 'get_chat_history',
-        nonce: self.nonce,
-        session_id: self.sessionId
-        },
-        dataType: 'json',
-        timeout: 10000
-    })
-    .done(function(response) {
-        self.$messages.find('.loading-history').remove();
+    // $.ajax({
+    //     url: self.ajaxurl,
+    //     type: 'POST',
+    //     data: {
+    //     action: 'get_chat_history',
+    //     nonce: self.nonce,
+    //     session_id: self.sessionId
+    //     },
+    //     dataType: 'json',
+    //     timeout: 10000
+    // })
+    // .done(function(response) {
+    //     self.$messages.find('.loading-history').remove();
         
-        if (response && response.success && Array.isArray(response.data)) {
-        // پاک کردن فقط اگر تاریخچه جدیدی داریم
-        if (response.data.length > 0 && forceReload) {
-            self.$messages.find('.welcome-message').remove();
-            self.$messages.find('.message').remove();
-            self.messageQueue.clear();
-            self.messageHistory = [];
-        }
+    //     if (response && response.success && Array.isArray(response.data)) {
+    //     // پاک کردن فقط اگر تاریخچه جدیدی داریم
+    //     if (response.data.length > 0 && forceReload) {
+    //         self.$messages.find('.welcome-message').remove();
+    //         self.$messages.find('.message').remove();
+    //         self.messageQueue.clear();
+    //         self.messageHistory = [];
+    //     }
         
-        if (response.data.length === 0) {
-            // فقط اسکرول کن
-            setTimeout(() => self.scrollToBottom(true), 100);
-        } else {
-            let newMessagesAdded = 0;
+    //     if (response.data.length === 0) {
+    //         // فقط اسکرول کن
+    //         setTimeout(() => self.scrollToBottom(true), 100);
+    //     } else {
+    //         let newMessagesAdded = 0;
             
-            response.data.forEach(function(message) {
-            // جلوگیری از تکرار در تاریخچه
-            if (!self.messageQueue.has(message.id)) {
-                self.appendMessage({
-                id: message.id,
-                message: message.message_content,
-                user_name: message.user_name,
-                timestamp: message.created_at,
-                type: message.message_type
-                });
+    //         response.data.forEach(function(message) {
+    //         // جلوگیری از تکرار در تاریخچه
+    //         if (!self.messageQueue.has(message.id)) {
+    //             self.appendMessage({
+    //             id: message.id,
+    //             message: message.message_content,
+    //             user_name: message.user_name,
+    //             timestamp: message.created_at,
+    //             type: message.message_type
+    //             });
                 
-                // اضافه کردن به تاریخچه
-                self.messageHistory.push({
-                id: message.id,
-                text: message.message_content,
-                timestamp: message.created_at
-                });
+    //             // اضافه کردن به تاریخچه
+    //             self.messageHistory.push({
+    //             id: message.id,
+    //             text: message.message_content,
+    //             timestamp: message.created_at
+    //             });
                 
-                newMessagesAdded++;
-            }
-            });
+    //             newMessagesAdded++;
+    //         }
+    //         });
             
-            // فقط اگر پیام جدیدی اضافه شد، اسکرول کن
-            if (newMessagesAdded > 0) {
-            setTimeout(() => self.scrollToBottom(true), 200);
-            } else {
-            self.scrollToBottom(true);
-            }
-        }
-        } else {
-        self.showAlert('خطا در بارگذاری تاریخچه', 'error');
-        setTimeout(() => self.scrollToBottom(true), 100);
-        }
-    })
-    .fail(function() {
-        self.$messages.find('.loading-history').remove();
-        self.showAlert('خطا در بارگذاری تاریخچه', 'error');
-        setTimeout(() => self.scrollToBottom(true), 100);
-    });
-    }
+    //         // فقط اگر پیام جدیدی اضافه شد، اسکرول کن
+    //         if (newMessagesAdded > 0) {
+    //         setTimeout(() => self.scrollToBottom(true), 200);
+    //         } else {
+    //         self.scrollToBottom(true);
+    //         }
+    //     }
+    //     } else {
+    //     self.showAlert('خطا در بارگذاری تاریخچه', 'error');
+    //     setTimeout(() => self.scrollToBottom(true), 100);
+    //     }
+    // })
+    // .fail(function() {
+    //     self.$messages.find('.loading-history').remove();
+    //     self.showAlert('خطا در بارگذاری تاریخچه', 'error');
+    //     setTimeout(() => self.scrollToBottom(true), 100);
+    // });
+    // }
 
     // ---------- Helper Methods ----------
     _formatTime(ts) {
