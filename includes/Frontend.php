@@ -194,16 +194,15 @@ class Frontend {
         ]);
 
         if ($id) {
-            $pusher = Plugin::get_instance()->get_service('pusher');
+            $pusher = Plugin::get_instance()->get_service('pusher_service');
             if ($pusher) {
-                $pusher->trigger("chat-{$session_id}", 'new-message', [
+                $pusher->trigger("private-chat-{$session_id}", 'new-message', [
                     'id' => $id,
                     'message' => sprintf(__('✅ ممنون %s! اطلاعات شما ثبت شد.', 'wp-live-chat'), $user_name),
                     'user_name' => 'سیستم',
                     'timestamp' => current_time('mysql'),
                     'type' => 'system'
                 ]);
-                $pusher->trigger('admin-chat-channel', 'user-info-completed', ['session_id' => $session_id, 'user_name' => $user_name]);
             }
             wp_send_json_success(['message_id' => $id]);
             return;
@@ -511,7 +510,7 @@ class Frontend {
     }
 
     public function handle_notify_admin_connected(): void {
-        $this->verify_nonce();
+        $this->verify_nonce('test_connection');
         
         $session_id = sanitize_text_field($_POST['session_id'] ?? '');
         

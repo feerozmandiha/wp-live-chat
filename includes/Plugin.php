@@ -90,12 +90,12 @@ class Plugin {
             'cache' => Cache_Manager::class,
             'rest_api' => REST_API::class,
             'chat_frontend' => Chat_Frontend::class,
+            'pusher_auth' => \WP_Live_Chat\Pusher_Auth::class
         ];
-        
+
         foreach ($services as $key => $class) {
             if (class_exists($class)) {
                 $this->services[$key] = new $class();
-                
                 if (method_exists($this->services[$key], 'init')) {
                     $this->services[$key]->init();
                 }

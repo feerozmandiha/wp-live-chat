@@ -218,7 +218,7 @@ class Chat_Admin {
                 if ($pusher_service && $pusher_service->is_connected()) {
                     // ارسال به کانال کاربر
                     $pusher_result = $pusher_service->trigger(
-                        "chat-{$session_id}",
+                        "private-chat-{$session_id}",
                         'new-message',
                         [
                             'id' => $message_id,
@@ -228,6 +228,7 @@ class Chat_Admin {
                             'timestamp' => current_time('mysql')
                         ]
                     );
+
                     
                     if (!$pusher_result) {
                         error_log('WP Live Chat: Failed to trigger Pusher event for admin message ' . $message_id);

@@ -49,40 +49,36 @@
         }
 
         initPusher() {
-            if (!this.config.pusherKey || typeof Pusher === 'undefined') {
-                console.error('Pusher not configured');
-                this.showError('سرویس Pusher پیکربندی نشده است');
-                return;
-            }
+        if (!this.config.pusherKey || typeof Pusher === 'undefined') {
+            this.showError('سرویس Pusher پیکربندی نشده است');
+            return;
+        }
 
-            try {
-                this.pusher = new Pusher(this.config.pusherKey, {
-                    cluster: this.config.pusherCluster,
-                    forceTLS: true,
-                    authEndpoint: this.config.ajaxurl,
-                    auth: {
-                        params: {
-                            action: 'auth_pusher_channel_admin',
-                            nonce: this.config.nonce
-                        }
-                    }
-                });
-
-                // Subscribe to admin channel for notifications
-                const adminChannel = this.pusher.subscribe('admin-notifications');
-                adminChannel.bind('new-chat', (data) => {
-                    this.handleNewChatNotification(data);
-                });
-                
-                // تشخیص وضعیت اتصال
-                this.pusher.connection.bind('state_change', (states) => {
-                    console.log('Pusher connection state:', states.current);
-                });
-                
-            } catch (error) {
-                console.error('Error initializing Pusher:', error);
-                this.showError('خطا در راه‌اندازی Pusher');
+        try {
+            this.pusher = new Pusher(this.config.pusherKey, {
+            cluster: this.config.pusherCluster,
+            forceTLS: true,
+            authEndpoint: this.config.ajaxurl,
+            auth: {
+                params: {
+                action: 'pusher_auth',
+                nonce: this.config.nonce
+                }
             }
+            });
+
+            const adminChannel = this.pusher.subscribe('admin-notifications');
+            adminChannel.bind('new-chat', (data) => {
+            this.handleNewChatNotification(data);
+            });
+
+            this.pusher.connection.bind('state_change', (states) => {
+            console.log('Pusher connection state:', states.current);
+            });
+
+        } catch (error) {
+            this.showError('خطا در راه‌اندازی Pusher');
+        }
         }
 
         async loadSessions() {
@@ -311,52 +307,44 @@
         }
 
         subscribeToSession(sessionId) {
-            if (!this.pusher) {
-                console.warn('Pusher not initialized');
-                return;
-            }
+            if (!this.pusher) return;
 
-            // unsubscribe از کانال قبلی
             if (this.channel) {
                 try {
-                    this.pusher.unsubscribe(this.channel.name);
-                } catch (e) {
-                    console.warn('Error unsubscribing from channel:', e);
-                }
+                this.pusher.unsubscribe(this.channel.name);
+                } catch (e) {}
             }
 
-            // subscribe به کانال عمومی کاربر
-            const channelName = `chat-${sessionId}`;
-            
+            const channelName = `private-chat-${sessionId}`;
+
             try {
                 this.channel = this.pusher.subscribe(channelName);
-                
-                console.log('Subscribed to channel:', channelName);
 
                 this.channel.bind('new-message', (data) => {
-                    console.log('New message received:', data);
-                    
-                    if (this.currentSession && this.currentSession.session_id === sessionId) {
-                        // بارگذاری مجدد پیام‌ها
-                        this.loadSessionMessages(sessionId);
-                        
-                        // نمایش نوتیفیکیشن
-                        if (data.type === 'user') {
-                            this.showNotification('پیام جدید', `کاربر: ${data.user_name}`);
-                        }
-                    }
+                if (this.currentSession && this.currentSession.session_id === sessionId) {
+                    this.loadSessionMessages(sessionId);
+                }
+                if (data.type === 'user') {
+                    this.showNotification('پیام جدید', `کاربر: ${data.user_name || ''}`);
+                }
                 });
-                
+
+                this.channel.bind('client-message', (data) => {
+                if (this.currentSession && this.currentSession.session_id === sessionId) {
+                    this.loadSessionMessages(sessionId);
+                }
+                this.showNotification('پیام جدید', `کاربر: ${data.user_name || ''}`);
+                });
+
                 this.channel.bind('pusher:subscription_succeeded', () => {
-                    console.log('Successfully subscribed to channel:', channelName);
+                console.log('Subscribed to channel:', channelName);
                 });
-                
+
                 this.channel.bind('pusher:subscription_error', (error) => {
-                    console.error('Subscription error:', error);
+                console.error('Subscription error:', error);
                 });
-                
+
             } catch (error) {
-                console.error('Error subscribing to channel:', error);
                 this.showError('خطا در اتصال به کانال چت');
             }
         }

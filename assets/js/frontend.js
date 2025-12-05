@@ -665,9 +665,8 @@ class ConversationFlowManager {
     // ---------- ارسال event باز شدن چت ----------
     sendChatOpenedEvent() {
     if (!this.pusher || !this.connected) return;
-    
     try {
-        const channel = this.pusher.channel('chat-' + this.sessionId);
+        const channel = this.pusher.channel(`private-chat-${this.sessionId}`);
         if (channel) {
         channel.trigger('client-chat-opened', {
             user_id: this.currentUser.id || 0,
@@ -675,91 +674,83 @@ class ConversationFlowManager {
             timestamp: new Date().toISOString()
         });
         }
-    } catch (e) {
-        console.log('Chat opened event not sent');
+    } catch (e) {}
     }
-    }
+
 
     // ---------- ارسال event بسته شدن چت ----------
     sendChatClosedEvent() {
     if (!this.pusher || !this.connected) return;
-    
     try {
-        const channel = this.pusher.channel('chat-' + this.sessionId);
+        const channel = this.pusher.channel(`private-chat-${this.sessionId}`);
         if (channel) {
         channel.trigger('client-chat-closed', {
             user_id: this.currentUser.id || 0,
             timestamp: new Date().toISOString()
         });
         }
-    } catch (e) {
-        console.log('Chat closed event not sent');
-    }
+    } catch (e) {}
     }
 
     // ---------- Pusher ----------
     initPusher() {
-      if (!this.pusherKey || typeof Pusher === 'undefined') {
+    if (!this.pusherKey || typeof Pusher === 'undefined') {
         this.setConnectedStatus('offline');
         this.showAlert('سرویس چت در حال حاضر در دسترس نیست', 'error');
         return;
-      }
-      
-      try {
+    }
+
+    try {
         Pusher.logToConsole = false;
-        
+
         this.pusher = new Pusher(this.pusherKey, {
-          cluster: this.pusherCluster || 'mt1',
-          forceTLS: true,
-          authEndpoint: this.ajaxurl + '?action=pusher_auth', // 🔴 اضافه کردن endpoint auth
-            auth: {
-                params: {
-                    session_id: this.sessionId,
-                    user_name: this.currentUser.name || 'کاربر'
-                }
+        cluster: this.pusherCluster || 'mt1',
+        forceTLS: true,
+        authEndpoint: this.ajaxurl,
+        auth: {
+            params: {
+            action: 'pusher_auth',
+            nonce: this.nonce,
+            session_id: this.sessionId,
+            user_name: this.currentUser.name || 'کاربر'
             }
+        },
+        enabledTransports: ['ws', 'wss', 'xhr_streaming', 'xhr_polling']
         });
 
-        // 🔴 استفاده از کانال private
-        const channelName = 'private-chat-' + this.sessionId;
+        const channelName = `private-chat-${this.sessionId}`;
         const channel = this.pusher.subscribe(channelName);
 
-        // مدیریت وضعیت اتصال
         this.pusher.connection.bind('state_change', (states) => {
-          console.log('Pusher state:', states.current);
-          if (states.current === 'connected') {
+        if (states.current === 'connected') {
             this.setConnectedStatus('online');
             this.showAlert('اتصال برقرار شد', 'success', 3000);
-          } else if (states.current === 'disconnected' || states.current === 'failed') {
+        } else if (states.current === 'disconnected' || states.current === 'failed') {
             this.setConnectedStatus('offline');
-          }
+        }
         });
 
-        // دریافت پیام‌های جدید
         channel.bind('new-message', (payload) => {
-          this.onIncomingMessage(payload);
+        this.onIncomingMessage(payload);
         });
 
-        // دریافت وضعیت تایپ کردن ادمین
         channel.bind('admin-typing', () => {
-          this.showTypingIndicator();
+        this.showTypingIndicator();
         });
 
         channel.bind('admin-stopped-typing', () => {
-          this.hideTypingIndicator();
+        this.hideTypingIndicator();
         });
 
-        // اطلاع‌رسانی‌های ادمین
         const adminChannel = this.pusher.subscribe('admin-notifications');
         adminChannel.bind('admin-connected', () => {
-          this.showAlert('پشتیبان آنلاین شد', 'info', 3000);
+        this.showAlert('پشتیبان آنلاین شد', 'info', 3000);
         });
 
-      } catch (err) {
-        console.warn('Pusher init error', err);
+    } catch (err) {
         this.setConnectedStatus('offline');
         this.showAlert('خطا در اتصال به سرویس چت', 'error');
-      }
+    }
     }
 
     // ---------- مدیریت پیام‌های ورودی ----------
