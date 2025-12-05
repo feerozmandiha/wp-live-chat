@@ -1228,14 +1228,14 @@ class ConversationFlowManager {
         const $optimisticMessage = this._renderMessage(optimisticMessage);
         this.messageQueue.add(messageId);
         
-        // پاک کردن textarea
+        // پاک کردن textarea و اسکرول
         this.$textarea.val('');
         this.updateCounter();
         this.scrollToBottom();
         
         // ارسال AJAX
         try {
-            console.log('📤 Sending AJAX request...');
+            console.log('📤 Sending to process_conversation_step...');
             
             const response = await $.ajax({
                 url: this.ajaxurl,
@@ -1245,82 +1245,139 @@ class ConversationFlowManager {
                     nonce: this.nonce,
                     session_id: this.sessionId,
                     input: originalText,
-                    step: this.conversationFlow.getCurrentStep(),
-                    temp_id: messageId
+                    step: this.conversationFlow.getCurrentStep()
                 },
                 dataType: 'json',
-                timeout: 20000 // 20 ثانیه
+                timeout: 30000 // 30 ثانیه
             });
             
-            console.log('📥 AJAX response:', response);
+            console.log('📥 Response received:', response);
             
             if (response && response.success) {
+                const result = response.data;
+                console.log('✅ Flow processed successfully:', {
+                    next_step: result.next_step,
+                    requires_input: result.requires_input,
+                    input_type: result.input_type
+                });
+                
                 // تغییر وضعیت پیام optimistic
                 if ($optimisticMessage) {
                     $optimisticMessage.removeClass('sending').addClass('sent');
-                    $optimisticMessage.find('.message-status').text('✓').removeClass('sending').addClass('sent');
+                    $optimisticMessage.find('.message-status')
+                        .text('✓')
+                        .removeClass('sending')
+                        .addClass('sent');
                 }
                 
-                const result = response.data;
-                
-                // بروزرسانی conversation flow
+                // بروزرسانی کامل conversation flow در frontend
                 if (this.conversationFlow) {
-                    // ذخیره داده‌های جدید
-                    this.conversationFlow.currentStep = result.next_step;
-                    this.conversationFlow.userData = result.user_data || {};
-                    this.conversationFlow.requiresInput = result.requires_input;
-                    this.conversationFlow.inputType = result.input_type;
-                    this.conversationFlow.inputPlaceholder = result.input_placeholder;
-                    this.conversationFlow.inputHint = result.input_hint;
+                    // بروزرسانی state از سرور
+                    this.conversationFlow.currentStep = result.next_step || result.state.current_step;
+                    this.conversationFlow.userData = result.user_data || result.state.user_data || {};
+                    this.conversationFlow.requiresInput = result.requires_input || result.state.requires_input;
+                    this.conversationFlow.inputType = result.input_type || result.state.input_type;
+                    this.conversationFlow.inputPlaceholder = result.input_placeholder || result.state.input_placeholder;
+                    this.conversationFlow.inputHint = result.input_hint || result.state.input_hint;
                     
-                    // نمایش پیام سیستم
-                    if (result.message) {
-                        this.appendMessage({
-                            id: 'sys_' + Date.now(),
-                            message: result.message,
-                            user_name: 'سیستم',
-                            timestamp: new Date().toISOString(),
-                            type: 'system'
-                        });
-                    }
+                    console.log('🔄 Conversation flow updated in frontend:', {
+                        step: this.conversationFlow.currentStep,
+                        inputType: this.conversationFlow.inputType,
+                        requiresInput: this.conversationFlow.requiresInput
+                    });
                     
                     // بروزرسانی UI
                     this.conversationFlow.updateInputUI();
                     
-                    console.log('✅ Flow updated:', {
-                        step: result.next_step,
-                        requiresInput: result.requires_input,
-                        inputType: result.input_type
-                    });
+                    // نمایش پیام سیستم اگر وجود دارد
+                    if (result.message && result.message.trim() !== '') {
+                        console.log('📢 System message to show:', result.message);
+                        
+                        // بررسی آیا این پیام قبلاً نمایش داده شده
+                        const shouldShowMessage = this.shouldShowSystemMessage(result.message);
+                        
+                        if (shouldShowMessage) {
+                            this.appendMessage({
+                                id: 'sys_' + Date.now(),
+                                message: result.message,
+                                user_name: 'سیستم',
+                                timestamp: new Date().toISOString(),
+                                type: 'system'
+                            });
+                            
+                            // ذخیره که این پیام نمایش داده شده
+                            this.markSystemMessageShown(result.message);
+                        }
+                    }
+                    
+                    // اگر نیاز به ورودی نداریم و مرحله chat_active است، focus به textarea
+                    if (!this.conversationFlow.requiresInput && 
+                        this.conversationFlow.currentStep === 'chat_active') {
+                        setTimeout(() => {
+                            this.$textarea.focus();
+                        }, 100);
+                    }
                 }
+                
                 
                 // نمایش موفقیت
                 this.showAlert('پیام ارسال شد', 'success', 2000);
                 
+                // لاگ state نهایی برای دیباگ
+                console.log('🎯 Final flow state:', {
+                    step: this.conversationFlow ? this.conversationFlow.getCurrentStep() : 'unknown',
+                    canSendNext: this.conversationFlow ? this.conversationFlow.requiresInput : false,
+                    inputType: this.conversationFlow ? this.conversationFlow.getInputType() : 'unknown'
+                });
+                
             } else {
                 console.error('❌ Server error:', response);
-                this.handleSendError(
-                    $optimisticMessage, 
-                    messageId, 
-                    response ? response.data : 'خطای سرور'
-                );
+                
+                // نمایش خطای خاص از سرور یا خطای عمومی
+                const errorMessage = response && response.data && response.data.message 
+                    ? response.data.message 
+                    : 'خطا در پردازش پیام';
+                
+                this.handleSendError($optimisticMessage, messageId, errorMessage);
             }
             
         } catch (error) {
             console.error('❌ AJAX error:', error);
-            this.handleSendError(
-                $optimisticMessage, 
-                messageId, 
-                'خطا در ارتباط با سرور'
-            );
+            
+            let errorMessage = 'خطا در ارتباط با سرور';
+            if (error.statusText === 'timeout') {
+                errorMessage = 'زمان انتظار به پایان رسید. لطفاً دوباره تلاش کنید.';
+            }
+            
+            this.handleSendError($optimisticMessage, messageId, errorMessage);
             
         } finally {
             // بازنشانی وضعیت ارسال
             this.isSending = false;
             this.$sendBtn.prop('disabled', false).html('<span class="send-icon">✉️</span> ارسال');
-            this.$textarea.focus();
+            
+            // focus به textarea اگر نیاز به ورودی داریم
+            if (this.conversationFlow && this.conversationFlow.requiresInput) {
+                setTimeout(() => {
+                    this.$textarea.focus();
+                }, 100);
+            }
         }
     }
+
+    markSystemMessageShown(message) {
+        const key = 'shown_system_msg_' + this.hashCode(message);
+        sessionStorage.setItem(key, 'true');
+    }
+
+
+    // اضافه کردن متدهای کمکی جدید
+    shouldShowSystemMessage(message) {
+        const key = 'shown_system_msg_' + this.hashCode(message);
+        const shown = sessionStorage.getItem(key);
+        return !shown; // اگر قبلاً نمایش داده نشده، true برگردان
+    }
+
 
     // اضافه کردن تابع handleFlowTimeout
     handleFlowTimeout($optimisticMessage, optimisticId, originalText) {

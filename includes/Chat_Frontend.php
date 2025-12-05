@@ -23,6 +23,9 @@ class Chat_Frontend {
 
         add_action('wp_ajax_nopriv_debug_conversation_flow', [$this, 'handle_debug_flow']);
         add_action('wp_ajax_debug_conversation_flow', [$this, 'handle_debug_flow']);
+
+        add_action('wp_ajax_nopriv_sync_flow_state', [$this, 'handle_sync_flow_state']);
+        add_action('wp_ajax_sync_flow_state', [$this, 'handle_sync_flow_state']);
     }
 
     public function handle_typing_event() {
@@ -91,15 +94,49 @@ class Chat_Frontend {
             wp_send_json_error('خطا: ' . $e->getMessage());
         }
     }
+
+    public function handle_sync_flow_state(): void {
+        check_ajax_referer('wp_live_chat_nonce', 'nonce');
+        
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        
+        if (empty($session_id)) {
+            wp_send_json_error('شناسه جلسه الزامی است');
+            return;
+        }
+        
+        try {
+            $flow = new Conversation_Flow($session_id);
+            
+            // دریافت state کامل
+            $state = $flow->get_full_state();
+            
+            // همچنین پیام مرحله فعلی را بفرست
+            $state['step_message'] = $flow->get_step_message();
+            
+            wp_send_json_success([
+                'state' => $state,
+                'sync_time' => current_time('mysql'),
+                'server_step' => $flow->get_current_step()
+            ]);
+            
+        } catch (\Exception $e) {
+            wp_send_json_error('خطا در sync: ' . $e->getMessage());
+        }
+    }
     
     public function handle_process_conversation_step(): void {
-        // دیباگ: شروع
-        error_log('=== PROCESS_CONVERSATION_STEP START ===');
-        error_log('POST data: ' . print_r($_POST, true));
+        // فعال کردن error_logging
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('=== CHAT FRONTEND: PROCESS CONVERSATION STEP ===');
+            error_log('POST: ' . print_r($_POST, true));
+        }
         
         // بررسی nonce
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wp_live_chat_nonce')) {
-            error_log('Nonce verification failed');
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Nonce verification failed');
+            }
             wp_send_json_error('درخواست نامعتبر', 403);
             exit;
         }
@@ -109,52 +146,55 @@ class Chat_Frontend {
         $input = isset($_POST['input']) ? sanitize_textarea_field($_POST['input']) : '';
         $step = isset($_POST['step']) ? sanitize_text_field($_POST['step']) : 'welcome';
         
-        error_log("Session ID: {$session_id}");
-        error_log("Input: {$input}");
-        error_log("Step: {$step}");
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log("Session: {$session_id}");
+            error_log("Input length: " . strlen($input));
+            error_log("Step: {$step}");
+        }
         
         if (empty($session_id) || empty($input)) {
-            error_log('Empty session_id or input');
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Empty session_id or input');
+            }
             wp_send_json_error('ورودی ناقص', 400);
             exit;
         }
         
         try {
-            // ایجاد یا بازیابی conversation flow
-            error_log('Creating Conversation_Flow instance...');
+            // ایجاد flow
             $flow = new Conversation_Flow($session_id);
             
-            // دریافت مرحله فعلی از flow
-            $current_flow_step = $flow->get_current_step();
-            error_log("Current flow step: {$current_flow_step}");
-            error_log("Requested step: {$step}");
-            
-            // اگر مرحله درخواستی با مرحله flow متفاوت است، از flow پیروی کن
-            if ($step !== $current_flow_step) {
-                error_log("Step mismatch. Using flow step: {$current_flow_step}");
-                $step = $current_flow_step;
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                $initial_state = $flow->get_full_state();
+                error_log("Initial flow state:");
+                error_log(print_r($initial_state, true));
             }
             
-            // پردازش ورودی کاربر
-            error_log('Processing input...');
+            // پردازش ورودی
             $result = $flow->process_input($input, $flow->get_input_type());
             
-            error_log('Process result: ' . print_r($result, true));
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log("Process result:");
+                error_log(print_r($result, true));
+            }
             
             if ($result['success']) {
-                // ذخیره پیام کاربر در دیتابیس
+                // ذخیره پیام در دیتابیس
                 $database = Plugin::get_instance()->get_service('database');
                 if ($database) {
-                    // تشخیص نوع پیام
-                    $input_type = $flow->get_input_type($step);
+                    // تعیین نوع پیام
                     $message_type = 'user';
-                    if ($input_type === 'phone' || $input_type === 'name') {
-                        $message_type = 'user_info';
+                    if (isset($result['field_type'])) {
+                        if ($result['field_type'] === 'phone' || $result['field_type'] === 'name') {
+                            $message_type = 'user_info';
+                        }
                     }
                     
-                    $user_name = $result['user_data']['name'] ?? 'کاربر';
-                    if (empty($user_name) && !empty($result['user_data']['phone'])) {
-                        $user_name = 'کاربر (' . substr($result['user_data']['phone'], 0, 3) . '***)';
+                    $user_name = 'کاربر';
+                    if (!empty($result['user_data']['name'])) {
+                        $user_name = $result['user_data']['name'];
+                    } elseif (!empty($result['user_data']['phone'])) {
+                        $user_name = 'کاربر (' . substr($result['user_data']['phone'], 0, 4) . '***)';
                     }
                     
                     $message_id = $database->save_message([
@@ -164,25 +204,93 @@ class Chat_Frontend {
                         'message_type' => $message_type
                     ]);
                     
-                    error_log("Message saved to DB with ID: {$message_id}");
+                    if (defined('WP_DEBUG') && WP_DEBUG) {
+                        error_log("Message saved to DB with ID: {$message_id}");
+                    }
+                    
+                    // اگر اطلاعات کاربر کامل شد، اطلاعات session را بروزرسانی کن
+                    if (!empty($result['user_data']['phone']) && !empty($result['user_data']['name'])) {
+                        $database->update_session_user_info(
+                            $session_id,
+                            $result['user_data']['name'],
+                            $result['user_data']['phone'],
+                            $result['user_data']['company'] ?? ''
+                        );
+                        
+                        if (defined('WP_DEBUG') && WP_DEBUG) {
+                            error_log("Session user info updated");
+                        }
+                        
+                        // ارسال نوتیفیکیشن به ادمین
+                        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
+                        if ($pusher_service && $pusher_service->is_connected()) {
+                            $pusher_service->trigger('admin-notifications', 'user-info-completed', [
+                                'session_id' => $session_id,
+                                'user_name' => $result['user_data']['name'],
+                                'user_phone' => $result['user_data']['phone'],
+                                'timestamp' => current_time('mysql')
+                            ]);
+                            
+                            if (defined('WP_DEBUG') && WP_DEBUG) {
+                                error_log("Admin notification sent via Pusher");
+                            }
+                        }
+                    }
                 }
                 
-                // پاسخ موفقیت‌آمیز
-                error_log('Sending success response');
-                wp_send_json_success($result);
+                // پاسخ موفقیت‌آمیز با state کامل
+                $response = [
+                    'success' => true,
+                    'data' => [
+                        'next_step' => $result['next_step'] ?? $result['state']['current_step'],
+                        'message' => $result['message'],
+                        'state' => $result['state'],
+                        'user_data' => $result['user_data'],
+                        'requires_input' => $result['state']['requires_input'],
+                        'input_type' => $result['state']['input_type'],
+                        'input_placeholder' => $result['state']['input_placeholder'],
+                        'input_hint' => $result['state']['input_hint']
+                    ]
+                ];
+                
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log("Sending success response");
+                    error_log(print_r($response, true));
+                }
+                
+                wp_send_json_success($response['data']);
                 
             } else {
-                error_log('Process failed: ' . ($result['message'] ?? 'Unknown error'));
-                wp_send_json_error($result['message'] ?? 'خطا در پردازش');
+                // خطا در پردازش
+                $error_response = [
+                    'success' => false,
+                    'message' => $result['message'] ?? 'خطا در پردازش',
+                    'state' => $result['state'] ?? []
+                ];
+                
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log("Sending error response");
+                    error_log(print_r($error_response, true));
+                }
+                
+                wp_send_json_error($error_response);
             }
             
         } catch (\Exception $e) {
-            error_log('Exception in process_conversation_step: ' . $e->getMessage());
-            error_log('Trace: ' . $e->getTraceAsString());
-            wp_send_json_error('خطای سرور: ' . $e->getMessage());
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('Exception in process_conversation_step: ' . $e->getMessage());
+                error_log('Trace: ' . $e->getTraceAsString());
+            }
+            
+            wp_send_json_error([
+                'message' => 'خطای سرور: ' . $e->getMessage(),
+                'exception' => defined('WP_DEBUG') && WP_DEBUG ? $e->getTraceAsString() : ''
+            ]);
         }
         
-        error_log('=== PROCESS_CONVERSATION_STEP END ===');
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('=== CHAT FRONTEND: PROCESS CONVERSATION STEP END ===');
+        }
     }
     
     public function handle_get_conversation_step(): void {
