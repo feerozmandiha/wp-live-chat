@@ -18,6 +18,27 @@ class Plugin {
     }
     
     public function init(): void {
+            // اجازه دادن به REST API قبل از هر چیزی
+    add_filter('rest_authentication_errors', function($result) {
+        // اگر قبلاً خطایی وجود دارد، برگردان
+        if (!empty($result)) {
+            return $result;
+        }
+        
+        // اجازه دادن به درخواست‌های افزونه چت
+        if (strpos($_SERVER['REQUEST_URI'], '/wp-json/wp-live-chat/') !== false) {
+            return true;
+        }
+        
+        // اجازه دادن به admin-ajax.php
+        if (strpos($_SERVER['REQUEST_URI'], 'admin-ajax.php') !== false && 
+            isset($_REQUEST['action']) && 
+            strpos($_REQUEST['action'], 'wp_live_chat') === 0) {
+            return true;
+        }
+        
+        return $result;
+    });
         $this->register_autoloader();
         $this->register_hooks();
         $this->init_services();

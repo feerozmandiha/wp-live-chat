@@ -710,10 +710,18 @@ class ConversationFlowManager {
         
         this.pusher = new Pusher(this.pusherKey, {
           cluster: this.pusherCluster || 'mt1',
-          forceTLS: true
+          forceTLS: true,
+          authEndpoint: this.ajaxurl + '?action=pusher_auth', // 🔴 اضافه کردن endpoint auth
+            auth: {
+                params: {
+                    session_id: this.sessionId,
+                    user_name: this.currentUser.name || 'کاربر'
+                }
+            }
         });
 
-        const channelName = 'chat-' + this.sessionId;
+        // 🔴 استفاده از کانال private
+        const channelName = 'private-chat-' + this.sessionId;
         const channel = this.pusher.subscribe(channelName);
 
         // مدیریت وضعیت اتصال
@@ -1403,25 +1411,48 @@ class ConversationFlowManager {
 
     // ---------- مدیریت تایپ کردن ----------
     sendTypingEvent(status) {
-      if (!this.pusher || !this.connected) return;
-      
-      try {
-        const channel = this.pusher.channel('chat-' + this.sessionId);
-        if (channel) {
-          if (status === 'typing') {
-            channel.trigger('client-user-typing', {
-              user_id: this.currentUser.id || 0,
-              user_name: this.currentUser.name || 'کاربر'
-            });
-          } else if (status === 'stopped') {
-            channel.trigger('client-user-stopped-typing', {
-              user_id: this.currentUser.id || 0
-            });
-          }
+        if (!this.pusher || !this.connected) return;
+        
+        try {
+            const channel = this.pusher.channel('private-chat-' + this.sessionId);
+            if (channel) {
+                if (status === 'typing') {
+                    // 🔴 استفاده از client event روی کانال private
+                    channel.trigger('client-user-typing', {
+                        user_id: this.currentUser.id || 0,
+                        user_name: this.currentUser.name || 'کاربر',
+                        timestamp: Date.now()
+                    });
+                } else if (status === 'stopped') {
+                    channel.trigger('client-user-stopped-typing', {
+                        user_id: this.currentUser.id || 0,
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        } catch (e) {
+            console.log('Typing event error:', e);
+            // حالت fallback: استفاده از AJAX
+            this.sendTypingViaAjax(status);
         }
-      } catch (e) {
-        console.log('Typing event not sent (might need client events enabled)');
-      }
+    }
+
+    // روش fallback با AJAX
+    sendTypingViaAjax(status) {
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'wp_live_chat_typing',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                status: status,
+                user_name: this.currentUser.name || 'کاربر'
+            },
+            timeout: 3000
+        }).fail(function() {
+            // ignore AJAX errors for typing
+        });
     }
 
     showTypingIndicator() {

@@ -1,5 +1,12 @@
 <?php
+
 namespace WP_Live_Chat;
+
+// قبل از شروع کلاس
+if (!defined('ABSPATH')) {
+    exit; // خروج اگر مستقیم فراخوانی شود
+}
+
 
 class Chat_Frontend {
     
@@ -14,8 +21,75 @@ class Chat_Frontend {
         add_action('wp_ajax_nopriv_check_admin_status', [$this, 'handle_check_admin_status']);
         add_action('wp_ajax_check_admin_status', [$this, 'handle_check_admin_status']);
     }
+
+    public function handle_typing_event() {
+        check_ajax_referer('wp_live_chat_nonce', 'nonce');
+        
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        $status = sanitize_text_field($_POST['status'] ?? '');
+        $user_name = sanitize_text_field($_POST['user_name'] ?? 'کاربر');
+        
+        if (empty($session_id)) {
+            wp_send_json_error('شناسه جلسه الزامی است');
+            return;
+        }
+        
+        // اگر Pusher متصل است، از Pusher استفاده کن
+        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
+        
+        if ($pusher_service && $pusher_service->is_connected()) {
+            try {
+                $event_name = $status === 'typing' ? 'client-user-typing' : 'client-user-stopped-typing';
+                
+                $pusher_service->trigger(
+                    'private-chat-' . $session_id,
+                    $event_name,
+                    [
+                        'user_name' => $user_name,
+                        'timestamp' => current_time('timestamp')
+                    ]
+                );
+                
+                wp_send_json_success(['sent_via' => 'pusher']);
+                
+            } catch (\Exception $e) {
+                // اگر Pusher خطا داد، فقط JSON موفقیت برگردان
+                wp_send_json_success(['sent_via' => 'ajax_fallback']);
+            }
+        } else {
+            // فقط پاسخ موفقیت‌آمیز بده
+            wp_send_json_success(['sent_via' => 'ajax']);
+        }
+    }
     
     public function handle_process_conversation_step(): void {
+                // اضافه کردن header های امنیتی
+        header('X-Content-Type-Options: nosniff');
+        header('X-Frame-Options: SAMEORIGIN');
+        header('X-XSS-Protection: 1; mode=block');
+        
+        // بررسی nonce با روش مطمئن‌تر
+        if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'wp_live_chat_nonce')) {
+            // لاگ خطا بدون نمایش جزئیات
+            error_log('WP Live Chat: Nonce verification failed');
+            wp_send_json_error('درخواست نامعتبر', 403);
+            exit;
+        }
+        
+        // اعتبارسنجی input
+        $session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
+        $input = isset($_POST['input']) ? sanitize_textarea_field($_POST['input']) : '';
+        
+        if (empty($session_id) || empty($input)) {
+            wp_send_json_error('ورودی ناقص', 400);
+            exit;
+        }
+        
+        // محدود کردن طول input
+        if (strlen($input) > 1000) {
+            wp_send_json_error('پیام بسیار طولانی است', 400);
+            exit;
+        }
         check_ajax_referer('wp_live_chat_nonce', 'nonce');
         
         $session_id = sanitize_text_field($_POST['session_id'] ?? '');

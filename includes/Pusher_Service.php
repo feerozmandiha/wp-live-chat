@@ -129,109 +129,127 @@ class Pusher_Service {
         return false;
     }
 
+    // در Pusher_Service.php
+    public function get_pusher_instance() {
+        return $this->pusher;
+    }
+
+    public function authorize_channel($channel_name, $socket_id) {
+        if (!$this->pusher) {
+            return false;
+        }
+        
+        try {
+            return $this->pusher->authorizeChannel($channel_name, $socket_id);
+        } catch (\Exception $e) {
+            error_log('Pusher Auth Error: ' . $e->getMessage());
+            return false;
+        }
+    }
+
     
 
 /**
  * احراز هویت کانال - نسخه سازگار با Pusher 7.x
  */
-public function authenticate_channel(string $channel, string $socket_id) {
-    $logger = Plugin::get_instance()->get_service('logger');
+    public function authenticate_channel(string $channel, string $socket_id) {
+        $logger = Plugin::get_instance()->get_service('logger');
 
-    if (!$this->is_connected() || !$this->pusher) {
-        if ($logger) $logger->warning('Pusher not connected in authenticate_channel');
-        return false;
-    }
-
-    try {
-        $config = $this->get_config();
-        
-        // برای کانال‌های عمومی نیازی به احراز هویت پیشرفته نیست
-        // اما باید signature برگردانیم
-        if (strpos($channel, 'private-') !== 0 && strpos($channel, 'presence-') !== 0) {
-            // برای کانال‌های عمومی، signature ساده ایجاد می‌کنیم
-            $auth_key = $config['key'];
-            $auth_secret = $config['secret'];
-            
-            if (empty($auth_key) || empty($auth_secret)) {
-                if ($logger) $logger->error('Pusher key or secret missing for authentication');
-                return false;
-            }
-            
-            $signature = hash_hmac('sha256', $socket_id . ':' . $channel, $auth_secret);
-            
-            return [
-                'auth' => $auth_key . ':' . $signature
-            ];
+        if (!$this->is_connected() || !$this->pusher) {
+            if ($logger) $logger->warning('Pusher not connected in authenticate_channel');
+            return false;
         }
-        
-        // برای کانال‌های خصوصی/حضور از روش‌های مختلف استفاده می‌کنیم
-        // روش 1: استفاده از authorizeChannel (نسخه‌های جدید)
-        if (method_exists($this->pusher, 'authorizeChannel')) {
-            try {
-                $auth = $this->pusher->authorizeChannel($channel, $socket_id);
-                if ($auth && isset($auth['auth'])) {
-                    return $auth;
+
+        try {
+            $config = $this->get_config();
+            
+            // برای کانال‌های عمومی نیازی به احراز هویت پیشرفته نیست
+            // اما باید signature برگردانیم
+            if (strpos($channel, 'private-') !== 0 && strpos($channel, 'presence-') !== 0) {
+                // برای کانال‌های عمومی، signature ساده ایجاد می‌کنیم
+                $auth_key = $config['key'];
+                $auth_secret = $config['secret'];
+                
+                if (empty($auth_key) || empty($auth_secret)) {
+                    if ($logger) $logger->error('Pusher key or secret missing for authentication');
+                    return false;
                 }
-            } catch (Throwable $e) {
-                if ($logger) $logger->warning('authorizeChannel failed: ' . $e->getMessage());
-            }
-        }
-        
-        // روش 2: استفاده از socket_auth (نسخه‌های قدیمی)
-        if (method_exists($this->pusher, 'socket_auth')) {
-            try {
-                return $this->pusher->socket_auth($channel, $socket_id);
-            } catch (Throwable $e) {
-                if ($logger) $logger->warning('socket_auth failed: ' . $e->getMessage());
-            }
-        }
-
-        // روش 3: تولید دستی signature برای کانال خصوصی
-        if (strpos($channel, 'private-') === 0 || strpos($channel, 'presence-') === 0) {
-            $auth_key = $config['key'];
-            $auth_secret = $config['secret'];
-            
-            if (empty($auth_key) || empty($auth_secret)) {
-                if ($logger) $logger->error('Pusher key or secret missing for private channel auth');
-                return false;
-            }
-            
-            $signature = hash_hmac('sha256', $socket_id . ':' . $channel, $auth_secret);
-            
-            // برای کانال‌های presence可能需要 data اضافی
-            if (strpos($channel, 'presence-') === 0) {
-                // داده کاربر برای presence channel
-                $user_data = [
-                    'user_id' => get_current_user_id(),
-                    'user_info' => [
-                        'name' => wp_get_current_user()->display_name,
-                        'role' => current_user_can('manage_options') ? 'admin' : 'user'
-                    ]
-                ];
                 
-                $string_to_sign = $socket_id . ':' . $channel . ':' . json_encode($user_data);
-                $signature = hash_hmac('sha256', $string_to_sign, $auth_secret);
+                $signature = hash_hmac('sha256', $socket_id . ':' . $channel, $auth_secret);
                 
-                return [
-                    'auth' => $auth_key . ':' . $signature,
-                    'channel_data' => json_encode($user_data)
-                ];
-            } else {
-                // برای کانال‌های private ساده
                 return [
                     'auth' => $auth_key . ':' . $signature
                 ];
             }
+            
+            // برای کانال‌های خصوصی/حضور از روش‌های مختلف استفاده می‌کنیم
+            // روش 1: استفاده از authorizeChannel (نسخه‌های جدید)
+            if (method_exists($this->pusher, 'authorizeChannel')) {
+                try {
+                    $auth = $this->pusher->authorizeChannel($channel, $socket_id);
+                    if ($auth && isset($auth['auth'])) {
+                        return $auth;
+                    }
+                } catch (Throwable $e) {
+                    if ($logger) $logger->warning('authorizeChannel failed: ' . $e->getMessage());
+                }
+            }
+            
+            // روش 2: استفاده از socket_auth (نسخه‌های قدیمی)
+            if (method_exists($this->pusher, 'socket_auth')) {
+                try {
+                    return $this->pusher->socket_auth($channel, $socket_id);
+                } catch (Throwable $e) {
+                    if ($logger) $logger->warning('socket_auth failed: ' . $e->getMessage());
+                }
+            }
+
+            // روش 3: تولید دستی signature برای کانال خصوصی
+            if (strpos($channel, 'private-') === 0 || strpos($channel, 'presence-') === 0) {
+                $auth_key = $config['key'];
+                $auth_secret = $config['secret'];
+                
+                if (empty($auth_key) || empty($auth_secret)) {
+                    if ($logger) $logger->error('Pusher key or secret missing for private channel auth');
+                    return false;
+                }
+                
+                $signature = hash_hmac('sha256', $socket_id . ':' . $channel, $auth_secret);
+                
+                // برای کانال‌های presence可能需要 data اضافی
+                if (strpos($channel, 'presence-') === 0) {
+                    // داده کاربر برای presence channel
+                    $user_data = [
+                        'user_id' => get_current_user_id(),
+                        'user_info' => [
+                            'name' => wp_get_current_user()->display_name,
+                            'role' => current_user_can('manage_options') ? 'admin' : 'user'
+                        ]
+                    ];
+                    
+                    $string_to_sign = $socket_id . ':' . $channel . ':' . json_encode($user_data);
+                    $signature = hash_hmac('sha256', $string_to_sign, $auth_secret);
+                    
+                    return [
+                        'auth' => $auth_key . ':' . $signature,
+                        'channel_data' => json_encode($user_data)
+                    ];
+                } else {
+                    // برای کانال‌های private ساده
+                    return [
+                        'auth' => $auth_key . ':' . $signature
+                    ];
+                }
+            }
+            
+            if ($logger) $logger->error('No valid authentication method could be used');
+            return false;
+            
+        } catch (Throwable $e) {
+            if ($logger) $logger->error('Auth error: ' . $e->getMessage());
+            return false;
         }
-        
-        if ($logger) $logger->error('No valid authentication method could be used');
-        return false;
-        
-    } catch (Throwable $e) {
-        if ($logger) $logger->error('Auth error: ' . $e->getMessage());
-        return false;
     }
-}
     /**
      * تست اتصال Pusher - برای استفاده در صفحه تنظیمات
      */
