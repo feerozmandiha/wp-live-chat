@@ -63,14 +63,13 @@ class Chat_Frontend {
     }
     
     public function handle_process_conversation_step(): void {
-                // اضافه کردن header های امنیتی
+        // اضافه کردن header های امنیتی
         header('X-Content-Type-Options: nosniff');
         header('X-Frame-Options: SAMEORIGIN');
         header('X-XSS-Protection: 1; mode=block');
         
         // بررسی nonce با روش مطمئن‌تر
         if (!isset($_POST['nonce']) || !wp_verify_nonce(sanitize_text_field($_POST['nonce']), 'wp_live_chat_nonce')) {
-            // لاگ خطا بدون نمایش جزئیات
             error_log('WP Live Chat: Nonce verification failed');
             wp_send_json_error('درخواست نامعتبر', 403);
             exit;
@@ -79,6 +78,7 @@ class Chat_Frontend {
         // اعتبارسنجی input
         $session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
         $input = isset($_POST['input']) ? sanitize_textarea_field($_POST['input']) : '';
+        $step = isset($_POST['step']) ? sanitize_text_field($_POST['step']) : 'welcome';
         
         if (empty($session_id) || empty($input)) {
             wp_send_json_error('ورودی ناقص', 400);
@@ -90,26 +90,13 @@ class Chat_Frontend {
             wp_send_json_error('پیام بسیار طولانی است', 400);
             exit;
         }
-        check_ajax_referer('wp_live_chat_nonce', 'nonce');
         
-        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
-        $input = sanitize_text_field($_POST['input'] ?? '');
-        $step = sanitize_text_field($_POST['step'] ?? 'welcome');
-        
-        if (empty($session_id) || empty($input)) {
-            wp_send_json_error('شناسه جلسه و ورودی الزامی است');
-            return;
-        }
+        // === خط 74: حذف duplicate check_ajax_referer ===
+        // check_ajax_referer('wp_live_chat_nonce', 'nonce'); // این خط را حذف کنید
         
         try {
             // ایجاد یا بازیابی conversation flow
             $flow = new Conversation_Flow($session_id);
-            
-            // اگر مرحله ارسالی با مرحله فعلی متفاوت است، آن را تنظیم کن
-            if ($step !== $flow->get_current_step()) {
-                // لاگ برای دیباگ
-                error_log("Step mismatch: received {$step}, current is " . $flow->get_current_step());
-            }
             
             // پردازش ورودی کاربر
             $result = $flow->process_input($input, $flow->get_input_type());
@@ -118,11 +105,12 @@ class Chat_Frontend {
                 // ذخیره پیام کاربر در دیتابیس
                 $database = Plugin::get_instance()->get_service('database');
                 if ($database) {
+                    $message_type = ($flow->get_input_type() === 'general_message') ? 'user' : 'user_info';
                     $database->save_message([
                         'session_id' => $session_id,
                         'user_name' => $result['user_data']['name'] ?? 'کاربر',
                         'message_content' => $input,
-                        'message_type' => 'user'
+                        'message_type' => $message_type
                     ]);
                 }
                 

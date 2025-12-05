@@ -177,30 +177,20 @@ class Conversation_Flow {
     
     public function process_input($input, $input_type = 'general_message') {
         
-            error_log("=== CONVERSATION FLOW DEBUG ===");
-            error_log("Session ID: " . $this->session_id);
-            error_log("Current Step: " . $this->current_step);
-            error_log("Input Type: " . $input_type);
-            error_log("Input: " . substr($input, 0, 50));
+        error_log("=== CONVERSATION FLOW DEBUG ===");
+        error_log("Session ID: " . $this->session_id);
+        error_log("Current Step: " . $this->current_step);
+        error_log("Input Type: " . $input_type);
+        error_log("Input: " . substr($input, 0, 50));
 
-        $current_step = $this->current_step; // استفاده از current_step نه get_current_step()
+        $current_step = $this->current_step;
         $step_config = $this->steps[$current_step] ?? null;
         
         if (!$step_config) {
             return ['success' => false, 'message' => 'خطا در پردازش'];
         }
         
-        // اگر مرحله نیاز به ورودی ندارد
-        if (!$step_config['requires_input']) {
-            return [
-                'success' => true,
-                'next_step' => $step_config['next_step'],
-                'message' => $this->get_step_message($step_config['next_step']),
-                'user_data' => $this->user_data
-            ];
-        }
-        
-        // بررسی validation
+        // اعتبارسنجی
         if (isset($step_config['validation']) && is_callable($step_config['validation'])) {
             $validation_result = call_user_func($step_config['validation'], $input);
             if (!$validation_result['valid']) {
@@ -208,16 +198,18 @@ class Conversation_Flow {
             }
         }
         
-        // ذخیره اطلاعات بر اساس نوع input
+        // ذخیره اطلاعات
         switch ($step_config['input_type'] ?? 'general_message') {
             case 'phone':
                 $this->user_data['phone'] = $input;
+                // لاگ
+                $this->log_user_data('phone', $input);
                 break;
             case 'name':
                 $this->user_data['name'] = $input;
+                $this->log_user_data('name', $input);
                 break;
             case 'general_message':
-                // ذخیره اولین پیام کاربر
                 if (empty($this->user_data['first_message'])) {
                     $this->user_data['first_message'] = $input;
                 }
@@ -227,29 +219,40 @@ class Conversation_Flow {
         // ذخیره اطلاعات کاربر
         $this->save_user_data();
         
-        // رفتن به مرحله بعدی
-        // بعد از ذخیره اطلاعات، مرحله را به روز کن
-        $this->current_step = $step_config['next_step'] ?? $current_step;
+        // تعیین مرحله بعدی
+        $next_step = $step_config['next_step'] ?? $current_step;
         
-        // اگر اطلاعات کاربر کامل شد، به check_admin_status برو
-        if ($this->user_data_completed() && $this->current_step === 'name_received') {
-            $this->current_step = 'check_admin_status';
-        }        
+        // اگر شماره موبایل وارد شد و مرحله فعلی phone_received است
+        if ($current_step === 'phone_received' && !empty($this->user_data['phone'])) {
+            $next_step = 'name_received';
+        }
         
+        // اگر نام وارد شد و مرحله فعلی name_received است
+        if ($current_step === 'name_received' && !empty($this->user_data['name'])) {
+            $next_step = 'check_admin_status';
+        }
+        
+        // بروزرسانی مرحله
+        $this->current_step = $next_step;
         $this->save_step();
         
         // بروزرسانی اطلاعات کاربر در دیتابیس
-        $this->update_session_user_info();
+        if (!empty($this->user_data['phone']) && !empty($this->user_data['name'])) {
+            $this->update_session_user_info();
+        }
+        
+        // پیام مرحله بعدی
+        $next_step_message = $this->get_step_message($next_step);
         
         return [
             'success' => true,
-            'next_step' => $this->current_step,
-            'message' => $this->get_step_message($this->current_step),
+            'next_step' => $next_step,
+            'message' => $next_step_message,
             'user_data' => $this->user_data,
-            'requires_input' => $this->requires_input($this->current_step),
-            'input_type' => $this->get_input_type($this->current_step),
-            'input_placeholder' => $this->get_input_placeholder($this->current_step),
-            'input_hint' => $this->get_input_hint($this->current_step)
+            'requires_input' => $this->requires_input($next_step),
+            'input_type' => $this->get_input_type($next_step),
+            'input_placeholder' => $this->get_input_placeholder($next_step),
+            'input_hint' => $this->get_input_hint($next_step)
         ];
     }
     

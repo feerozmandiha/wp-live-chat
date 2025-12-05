@@ -1247,37 +1247,86 @@ class ConversationFlowManager {
         const flowTimeout = setTimeout(() => {
             console.warn('⏰ Conversation flow timeout, falling back to direct send');
             self.handleFlowTimeout($optimisticMessage, messageId, originalText);
-        }, 10000); // 10 ثانیه timeout
+        }, 15000); // افزایش به 15 ثانیه
         
-        this.conversationFlow.processUserInput(originalText)
-            .then((processed) => {
-                clearTimeout(flowTimeout);
-                console.log('✅ Conversation flow processed result:', processed);
+        // دیباگ: ثبت اطلاعات ارسالی
+        console.log('📤 Sending to process_conversation_step:', {
+            session_id: this.sessionId,
+            input: originalText,
+            step: this.conversationFlow.getCurrentStep()
+        });
+        
+        // ارسال مستقیم AJAX به endpoint
+        $.ajax({
+            url: this.ajaxurl,
+            type: 'POST',
+            data: {
+                action: 'process_conversation_step',
+                nonce: this.nonce,
+                session_id: this.sessionId,
+                input: originalText,
+                step: this.conversationFlow.getCurrentStep(),
+                temp_id: messageId
+            },
+            dataType: 'json',
+            timeout: 15000
+        })
+        .done(function(response) {
+            clearTimeout(flowTimeout);
+            console.log('📥 Received response from conversation flow:', response);
+            
+            if (response && response.success) {
+                // نمایش موفقیت
+                self.showAlert('پیام شما با موفقیت ارسال شد', 'success', 3000);
                 
-                if (processed) {
-                    // ارسال به سرور برای ذخیره نهایی
-                    this.sendToServer(originalText, messageId, $optimisticMessage);
-                } else {
-                    // خطا در پردازش flow
-                    console.error('❌ Flow processing failed');
-                    this.handleSendError($optimisticMessage, messageId, 'خطا در پردازش');
-                    self.isSending = false;
-                    self.$sendBtn.prop('disabled', false).html('<span class="send-icon">✉️</span> ارسال');
+                // تغییر وضعیت پیام optimistic
+                if ($optimisticMessage) {
+                    $optimisticMessage.removeClass('sending').addClass('sent');
+                    $optimisticMessage.find('.message-status').text('✓').removeClass('sending').addClass('sent');
+                    $optimisticMessage.find('.sending-status').remove();
                 }
-            })
-            .catch((error) => {
-                clearTimeout(flowTimeout);
-                console.error('❌ Error in conversation flow processing:', error);
-                this.handleSendError($optimisticMessage, messageId, 'خطا در پردازش flow');
-                self.isSending = false;
-                self.$sendBtn.prop('disabled', false).html('<span class="send-icon">✉️</span> ارسال');
-            });
+                
+                // بروزرسانی flow
+                if (response.data.next_step && self.conversationFlow) {
+                    self.conversationFlow.currentStep = response.data.next_step;
+                    self.conversationFlow.userData = response.data.user_data || {};
+                    self.conversationFlow.requiresInput = response.data.requires_input;
+                    self.conversationFlow.inputType = response.data.input_type;
+                    self.conversationFlow.inputPlaceholder = response.data.input_placeholder;
+                    self.conversationFlow.inputHint = response.data.input_hint;
+                    
+                    // نمایش پیام سیستم
+                    if (response.data.message) {
+                        self.conversationFlow.showSystemMessage(response.data.message);
+                    }
+                    
+                    // بروزرسانی UI
+                    self.conversationFlow.updateInputUI();
+                }
+                
+                // پاک کردن textarea
+                self.$textarea.val('');
+                self.updateCounter();
+                
+            } else {
+                console.error('❌ Flow processing failed:', response);
+                self.handleSendError($optimisticMessage, messageId, response ? response.data : 'خطا در پردازش');
+            }
+        })
+        .fail(function(jqXHR, textStatus, errorThrown) {
+            clearTimeout(flowTimeout);
+            console.error('❌ AJAX failed:', { textStatus, errorThrown });
+            self.handleSendError($optimisticMessage, messageId, 'خطا در ارتباط با سرور');
+        })
+        .always(function() {
+            self.isSending = false;
+            self.$sendBtn.prop('disabled', false).html('<span class="send-icon">✉️</span> ارسال');
+            self.$textarea.focus();
+        });
         
         // پاک کردن textarea
         this.$textarea.val('');
         this.updateCounter();
-      
-      
         this.scrollToBottom();
     }
 
