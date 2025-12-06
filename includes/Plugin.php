@@ -109,7 +109,7 @@ class Plugin {
         if (!is_admin()) {
             $services['frontend'] = Frontend::class;
             $services['chat_frontend'] = Chat_Frontend::class;
-            // $services['conversation_flow'] = Conversation_Flow::class;
+            $services['conversation_flow'] = Conversation_Flow::class;
         }
         
         // در ادمین پنل
