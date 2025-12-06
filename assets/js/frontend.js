@@ -971,39 +971,16 @@ class ConversationFlowManager {
         }
     }
 
-    // متدهای کمکی جدید
     attemptReconnect() {
-        // محدودیت تعداد تلاش‌های مجدد
-        this.maxRetries = 5;
-        
         if (this.retryCount >= this.maxRetries) {
-            console.log('Max reconnection attempts reached. Switching to polling mode.');
-            this.showAlert('اتصال مستقیم ناموفق بود. سیستم در حالت آفلاین کار می‌کند.', 'warning', 5000);
             this.initPollingFallback();
             return;
         }
-        
         this.retryCount++;
-        const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000); // Exponential backoff
-        
-        console.log(`Attempting reconnection in ${delay}ms (attempt ${this.retryCount}/${this.maxRetries})`);
-        
-        this.showAlert(`تلاش برای اتصال مجدد... (${this.retryCount}/${this.maxRetries})`, 'info', 2000);
-        
+        const delay = Math.min(1000 * Math.pow(2, this.retryCount), 30000);
         setTimeout(() => {
             if (!this.connected && this.pusherKey) {
-                console.log('Starting reconnection attempt...');
-                
-                // بستن connection قبلی اگر وجود دارد
-                if (this.pusher && this.pusher.connection) {
-                    try {
-                        this.pusher.disconnect();
-                    } catch (e) {
-                        console.warn('Error disconnecting previous Pusher instance:', e);
-                    }
-                }
-                
-                // راه‌اندازی مجدد
+                if (this.pusher) this.pusher.disconnect();
                 this.initPusher();
             }
         }, delay);

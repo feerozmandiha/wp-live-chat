@@ -19,7 +19,7 @@ class Plugin {
     
     public function init(): void {
             // اجازه دادن به REST API قبل از هر چیزی
-    add_filter('rest_authentication_errors', function($result) {
+     add_filter('rest_authentication_errors', function($result) {
         // اگر قبلاً خطایی وجود دارد، برگردان
         if (!empty($result)) {
             return $result;
@@ -38,7 +38,7 @@ class Plugin {
         }
         
         return $result;
-    });
+     });
         $this->register_autoloader();
         $this->register_hooks();
         $this->init_services();
@@ -83,14 +83,13 @@ class Plugin {
             'pusher_service' => Pusher_Service::class,
             'admin' => Admin::class,
             'chat_admin' => Chat_Admin::class,
-            'frontend' => Frontend::class,
+            'chat_frontend' => Chat_Frontend::class, // ❌ Frontend::class حذف شد
             'blocks' => Blocks::class,
             'database' => Database::class,
             'logger' => Logger::class,
             'cache' => Cache_Manager::class,
             'rest_api' => REST_API::class,
-            'chat_frontend' => Chat_Frontend::class,
-            'pusher_auth' => \WP_Live_Chat\Pusher_Auth::class
+            'pusher_auth' => Pusher_Auth::class
         ];
 
         foreach ($services as $key => $class) {

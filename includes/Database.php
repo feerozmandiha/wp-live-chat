@@ -278,4 +278,21 @@ class Database {
             $this->create_tables();
         }
     }
+
+    public function get_unread_count($session_id, $admin_id = 0) {
+        global $wpdb;
+        $messages_table = $wpdb->prefix . 'wp_live_chat_messages';
+        $unread_table = $wpdb->prefix . 'wp_live_chat_unread';
+
+        return (int) $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*)
+            FROM {$messages_table} m
+            LEFT JOIN {$unread_table} u ON u.message_id = m.id AND u.admin_id = %d
+            WHERE m.session_id = %s 
+            AND m.message_type = 'user'
+            AND (u.is_read IS NULL OR u.is_read = 0)",
+            $admin_id,
+            $session_id
+        ));
+    }
 }

@@ -129,31 +129,19 @@ class Chat_Admin {
         ]);
     }
     
-// در Chat_Admin.php
+    // در Chat_Admin.php
     public function handle_get_chat_sessions(): void {
         check_ajax_referer('wp_live_chat_admin_nonce', 'nonce');
-        
         if (!current_user_can('manage_options')) {
             wp_send_json_error('دسترسی غیرمجاز');
         }
-        
         try {
             $database = Plugin::get_instance()->get_service('database');
             $sessions = $database->get_active_sessions();
-            
-            // اضافه کردن تعداد پیام‌های خوانده نشده
             foreach ($sessions as &$session) {
                 $session['unread_count'] = $database->get_unread_count($session['session_id'], get_current_user_id());
                 $session['has_unread'] = $session['unread_count'] > 0;
-                $session['last_message_time'] = $session['last_activity'];
-                
-                // علامت گذاری جلسات با پیام خوانده نشده
-                if ($session['has_unread']) {
-                    $session['highlight_class'] = 'has-unread-messages';
-                    $session['badge_text'] = $session['unread_count'] . ' پیام خوانده نشده';
-                }
             }
-            
             wp_send_json_success($sessions);
         } catch (\Exception $e) {
             wp_send_json_error($e->getMessage());

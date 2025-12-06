@@ -163,30 +163,28 @@
         renderSessions() {
             const container = $('#sessions-list');
             container.empty();
-
-            if (!this.sessions || this.sessions.length === 0) {
-                container.html('<div class="no-sessions">' + (this.config.strings?.noActiveChats || 'هیچ گفتگویی وجود ندارد') + '</div>');
+            if (this.sessions.length === 0) {
+                container.html('<div class="no-sessions">' + this.config.strings.noActiveChats + '</div>');
                 return;
             }
-
             this.sessions.forEach(session => {
-                const hasUnread = session.unread_count && session.unread_count > 0;
                 const sessionElement = $(`
-                    <div class="session-item ${hasUnread ? 'has-unread' : ''}" data-session-id="${session.session_id}">
+                    <div class="session-item ${session.unread_count > 0 ? 'has-unread' : ''}" data-session-id="${session.session_id}">
                         <div class="session-info">
                             <div class="session-user">
                                 <strong>${this.escapeHtml(session.user_name || 'کاربر')}</strong>
-                                ${session.user_phone ? `<div class="session-phone">${this.escapeHtml(session.user_phone)}</div>` : ''}
+                                ${session.user_phone ? `<div class="session-phone">${session.user_phone}</div>` : ''}
                             </div>
                             <div class="session-meta">
                                 <span class="message-count">${session.message_count || 0} پیام</span>
                                 <span class="last-activity">${this.formatTime(session.last_activity)}</span>
                             </div>
                         </div>
-                        ${hasUnread ? `<span class="unread-badge">${session.unread_count}</span>` : ''}
+                        ${session.unread_count > 0 ? 
+                            `<span class="unread-badge">${session.unread_count}</span>` : ''
+                        }
                     </div>
                 `);
-
                 sessionElement.on('click', () => this.selectSession(session));
                 container.append(sessionElement);
             });

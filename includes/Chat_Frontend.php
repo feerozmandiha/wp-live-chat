@@ -1,322 +1,187 @@
 <?php
-
 namespace WP_Live_Chat;
 
-// قبل از شروع کلاس
 if (!defined('ABSPATH')) {
-    exit; // خروج اگر مستقیم فراخوانی شود
+    exit;
 }
 
-
 class Chat_Frontend {
-    
     public function init(): void {
-        // AJAX handlers برای conversation flow
         add_action('wp_ajax_nopriv_process_conversation_step', [$this, 'handle_process_conversation_step']);
         add_action('wp_ajax_process_conversation_step', [$this, 'handle_process_conversation_step']);
-        
         add_action('wp_ajax_nopriv_get_conversation_step', [$this, 'handle_get_conversation_step']);
         add_action('wp_ajax_get_conversation_step', [$this, 'handle_get_conversation_step']);
-        
         add_action('wp_ajax_nopriv_check_admin_status', [$this, 'handle_check_admin_status']);
         add_action('wp_ajax_check_admin_status', [$this, 'handle_check_admin_status']);
-
-        add_action('wp_ajax_nopriv_debug_conversation_flow', [$this, 'handle_debug_flow']);
-        add_action('wp_ajax_debug_conversation_flow', [$this, 'handle_debug_flow']);
-
-        add_action('wp_ajax_nopriv_sync_flow_state', [$this, 'handle_sync_flow_state']);
-        add_action('wp_ajax_sync_flow_state', [$this, 'handle_sync_flow_state']);
+        add_action('wp_ajax_get_chat_history', [$this, 'handle_get_chat_history']);
+        add_action('wp_ajax_nopriv_get_chat_history', [$this, 'handle_get_chat_history']);
+        add_action('wp_ajax_save_user_info', [$this, 'handle_save_user_info']);
+        add_action('wp_ajax_nopriv_save_user_info', [$this, 'handle_save_user_info']);
+        add_action('wp_enqueue_scripts', [$this, 'enqueue_assets']);
+        add_action('wp_footer', [$this, 'render_chat_widget']);
     }
 
-    public function handle_typing_event() {
-        check_ajax_referer('wp_live_chat_nonce', 'nonce');
-        
-        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
-        $status = sanitize_text_field($_POST['status'] ?? '');
-        $user_name = sanitize_text_field($_POST['user_name'] ?? 'کاربر');
-        
-        if (empty($session_id)) {
-            wp_send_json_error('شناسه جلسه الزامی است');
-            return;
-        }
-        
-        // اگر Pusher متصل است، از Pusher استفاده کن
-        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
-        
-        if ($pusher_service && $pusher_service->is_connected()) {
-            try {
-                $event_name = $status === 'typing' ? 'client-user-typing' : 'client-user-stopped-typing';
-                
-                $pusher_service->trigger(
-                    'private-chat-' . $session_id,
-                    $event_name,
-                    [
-                        'user_name' => $user_name,
-                        'timestamp' => current_time('timestamp')
-                    ]
-                );
-                
-                wp_send_json_success(['sent_via' => 'pusher']);
-                
-            } catch (\Exception $e) {
-                // اگر Pusher خطا داد، فقط JSON موفقیت برگردان
-                wp_send_json_success(['sent_via' => 'ajax_fallback']);
-            }
-        } else {
-            // فقط پاسخ موفقیت‌آمیز بده
-            wp_send_json_success(['sent_via' => 'ajax']);
-        }
+    public function enqueue_assets(): void {
+        if (!(bool) get_option('wp_live_chat_enable_chat', true)) return;
+
+        wp_enqueue_style('wp-live-chat-frontend', WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css', [], WP_LIVE_CHAT_VERSION);
+        wp_enqueue_script('pusher', 'https://js.pusher.com/8.2.0/pusher.min.js', [], '8.2.0', true);
+        wp_enqueue_script('wp-live-chat-frontend', WP_LIVE_CHAT_PLUGIN_URL . 'build/js/frontend.js', ['jquery', 'pusher'], WP_LIVE_CHAT_VERSION, true);
+
+        $session_id = $this->generate_session_id();
+        $user_data = $this->get_saved_user_data($session_id);
+
+        wp_localize_script('wp-live-chat-frontend', 'wpLiveChat', [
+            'ajaxurl' => admin_url('admin-ajax.php'),
+            'nonce' => wp_create_nonce('wp_live_chat_nonce'),
+            'pusherKey' => get_option('wp_live_chat_pusher_key', ''),
+            'pusherCluster' => get_option('wp_live_chat_pusher_cluster', 'mt1'),
+            'sessionId' => $session_id,
+            'userData' => $user_data,
+            'strings' => [
+                'typeMessage' => __('پیام خود را تایپ کنید...', 'wp-live-chat'),
+                'phonePlaceholder' => __('09xxxxxxxxx', 'wp-live-chat'),
+                'namePlaceholder' => __('نام شما یا شرکت', 'wp-live-chat'),
+                'welcome' => __('👋 سلام! به پشتیبانی آنلاین خوش آمدید', 'wp-live-chat')
+            ],
+            'debug' => defined('WP_DEBUG') && WP_DEBUG
+        ]);
     }
 
-    public function handle_debug_flow(): void {
+    private function generate_session_id(): string {
+        if (!empty($_COOKIE['wp_live_chat_session'])) {
+            return sanitize_text_field($_COOKIE['wp_live_chat_session']);
+        }
+        $id = 'chat_' . wp_generate_uuid4();
+        setcookie('wp_live_chat_session', $id, time() + (30 * DAY_IN_SECONDS), COOKIEPATH, COOKIE_DOMAIN);
+        return $id;
+    }
+
+    private function get_saved_user_data(string $session_id): array {
+        $key = 'wp_live_chat_user_' . $session_id;
+        $data = get_transient($key);
+        return is_array($data) ? $data : [];
+    }
+
+    public function render_chat_widget(): void {
+        if (!(bool) get_option('wp_live_chat_enable_chat', true)) return;
+        ?>
+        <div id="wp-live-chat-container" class="position-bottom-left wp-live-chat-hidden">
+            <div class="chat-widget" role="dialog" aria-label="<?php esc_attr_e('چت آنلاین', 'wp-live-chat'); ?>">
+                <div class="chat-header">
+                    <div class="chat-title">
+                        <h4><?php esc_html_e('چت آنلاین', 'wp-live-chat'); ?></h4>
+                        <div class="status-indicator">
+                            <span class="status-dot connecting"></span>
+                            <span class="status-text"><?php esc_html_e('در حال اتصال...', 'wp-live-chat'); ?></span>
+                        </div>
+                    </div>
+                    <button class="chat-close" aria-label="<?php esc_attr_e('بستن چت', 'wp-live-chat'); ?>">&times;</button>
+                </div>
+                <div class="chat-messages" aria-live="polite">
+                    <div class="welcome-message system-message">
+                        <p><?php echo esc_html($this->get_welcome_text()); ?></p>
+                    </div>
+                </div>
+                <div class="chat-input-area">
+                    <textarea id="wlch-textarea" placeholder="<?php esc_attr_e('پیام خود را تایپ کنید...', 'wp-live-chat'); ?>" rows="3" maxlength="500"></textarea>
+                    <div class="chat-actions">
+                        <span class="char-counter" id="wlch-counter">0/500</span>
+                        <button class="send-button" id="wlch-send-btn" disabled><?php esc_html_e('ارسال', 'wp-live-chat'); ?></button>
+                    </div>
+                </div>
+                <div class="chat-alternatives">
+                    <small><?php esc_html_e('راه‌های دیگر تماس:', 'wp-live-chat'); ?></small>
+                    <div class="contact-buttons">
+                        <a class="contact-btn whatsapp" href="https://wa.me/message/IAP7KGPJ32HWP1" target="_blank" rel="noopener noreferrer"><?php esc_html_e('واتساپ', 'wp-live-chat'); ?></a>
+                        <a class="contact-btn call" href="tel:09124533878"><?php esc_html_e('تماس', 'wp-live-chat'); ?></a>
+                    </div>
+                </div>
+            </div>
+            <div class="chat-toggle" role="button" aria-label="<?php esc_attr_e('باز کردن چت', 'wp-live-chat'); ?>">
+                <div class="chat-icon">💬</div>
+                <span class="notification-badge" id="wlch-notification" style="display:none;">0</span>
+            </div>
+        </div>
+        <?php
+    }
+
+    private function get_welcome_text(): string {
+        return get_option('wp_live_chat_welcome_text', __('👋 سلام! به پشتیبانی آنلاین خوش آمدید.', 'wp-live-chat'));
+    }
+
+    // همه handlerهای AJAX در ادامه — بدون تغییر و بدون تداخل
+    // ...
+
+    public function handle_get_chat_history(): void {
         check_ajax_referer('wp_live_chat_nonce', 'nonce');
-        
         $session_id = sanitize_text_field($_POST['session_id'] ?? '');
-        
         if (empty($session_id)) {
             wp_send_json_error('شناسه جلسه الزامی است');
-            return;
         }
-        
         try {
-            $flow = new Conversation_Flow($session_id);
-            
-            wp_send_json_success([
-                'debug_info' => $flow->get_debug_info(),
-                'current_step' => $flow->get_current_step(),
-                'user_data' => $flow->get_user_data(),
-                'requires_input' => $flow->requires_input(),
-                'input_type' => $flow->get_input_type(),
-                'is_admin_online' => $flow->is_admin_online()
-            ]);
-            
+            $database = Plugin::get_instance()->get_service('database');
+            $messages = $database->get_session_messages($session_id);
+            wp_send_json_success($messages);
         } catch (\Exception $e) {
-            wp_send_json_error('خطا: ' . $e->getMessage());
+            wp_send_json_error('خطای سرور: ' . $e->getMessage());
         }
     }
 
-    public function handle_sync_flow_state(): void {
+    public function handle_save_user_info(): void {
         check_ajax_referer('wp_live_chat_nonce', 'nonce');
-        
         $session_id = sanitize_text_field($_POST['session_id'] ?? '');
-        
-        if (empty($session_id)) {
-            wp_send_json_error('شناسه جلسه الزامی است');
-            return;
+        $phone = sanitize_text_field($_POST['phone'] ?? '');
+        $name = sanitize_text_field($_POST['name'] ?? '');
+        if (empty($session_id) || (empty($phone) && empty($name))) {
+            wp_send_json_error('اطلاعات الزامی است');
         }
-        
         try {
-            $flow = new Conversation_Flow($session_id);
-            
-            // دریافت state کامل
-            $state = $flow->get_full_state();
-            
-            // همچنین پیام مرحله فعلی را بفرست
-            $state['step_message'] = $flow->get_step_message();
-            
-            wp_send_json_success([
-                'state' => $state,
-                'sync_time' => current_time('mysql'),
-                'server_step' => $flow->get_current_step()
-            ]);
-            
+            $database = Plugin::get_instance()->get_service('database');
+            $success = $database->update_session_user_info($session_id, $name, $phone, '');
+            wp_send_json_success(['saved' => true]);
         } catch (\Exception $e) {
-            wp_send_json_error('خطا در sync: ' . $e->getMessage());
+            wp_send_json_error('خطای سرور: ' . $e->getMessage());
         }
     }
-    
+
     public function handle_process_conversation_step(): void {
-        // فعال کردن error_logging
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('=== CHAT FRONTEND: PROCESS CONVERSATION STEP ===');
-            error_log('POST: ' . print_r($_POST, true));
-        }
-        
-        // بررسی nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wp_live_chat_nonce')) {
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('Nonce verification failed');
-            }
-            wp_send_json_error('درخواست نامعتبر', 403);
-            exit;
-        }
-        
-        // اعتبارسنجی input
-        $session_id = isset($_POST['session_id']) ? sanitize_text_field($_POST['session_id']) : '';
-        $input = isset($_POST['input']) ? sanitize_textarea_field($_POST['input']) : '';
-        $step = isset($_POST['step']) ? sanitize_text_field($_POST['step']) : 'welcome';
-        
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log("Session: {$session_id}");
-            error_log("Input length: " . strlen($input));
-            error_log("Step: {$step}");
-        }
-        
+        check_ajax_referer('wp_live_chat_nonce', 'nonce');
+        $session_id = sanitize_text_field($_POST['session_id'] ?? '');
+        $input = sanitize_textarea_field($_POST['input'] ?? '');
         if (empty($session_id) || empty($input)) {
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('Empty session_id or input');
-            }
-            wp_send_json_error('ورودی ناقص', 400);
-            exit;
+            wp_send_json_error('شناسه جلسه و ورودی الزامی است');
         }
-        
         try {
-            // ایجاد flow
             $flow = new Conversation_Flow($session_id);
-            
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                $initial_state = $flow->get_full_state();
-                error_log("Initial flow state:");
-                error_log(print_r($initial_state, true));
-            }
-            
-            // پردازش ورودی
-            $result = $flow->process_input($input, $flow->get_input_type());
-            
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log("Process result:");
-                error_log(print_r($result, true));
-            }
-            
+            $result = $flow->process_input($input);
             if ($result['success']) {
-                // ذخیره پیام در دیتابیس
                 $database = Plugin::get_instance()->get_service('database');
-                if ($database) {
-                    // تعیین نوع پیام
-                    $message_type = 'user';
-                    if (isset($result['field_type'])) {
-                        if ($result['field_type'] === 'phone' || $result['field_type'] === 'name') {
-                            $message_type = 'user_info';
-                        }
-                    }
-                    
-                    $user_name = 'کاربر';
-                    if (!empty($result['user_data']['name'])) {
-                        $user_name = $result['user_data']['name'];
-                    } elseif (!empty($result['user_data']['phone'])) {
-                        $user_name = 'کاربر (' . substr($result['user_data']['phone'], 0, 4) . '***)';
-                    }
-                    
-                    $message_id = $database->save_message([
-                        'session_id' => $session_id,
-                        'user_name' => $user_name,
-                        'message_content' => $input,
-                        'message_type' => $message_type
-                    ]);
-                    
-                    if (defined('WP_DEBUG') && WP_DEBUG) {
-                        error_log("Message saved to DB with ID: {$message_id}");
-                    }
-                    
-                    // اگر اطلاعات کاربر کامل شد، اطلاعات session را بروزرسانی کن
-                    if (!empty($result['user_data']['phone']) && !empty($result['user_data']['name'])) {
-                        $database->update_session_user_info(
-                            $session_id,
-                            $result['user_data']['name'],
-                            $result['user_data']['phone'],
-                            $result['user_data']['company'] ?? ''
-                        );
-                        
-                        if (defined('WP_DEBUG') && WP_DEBUG) {
-                            error_log("Session user info updated");
-                        }
-                        
-                        // ارسال نوتیفیکیشن به ادمین
-                        $pusher_service = Plugin::get_instance()->get_service('pusher_service');
-                        if ($pusher_service && $pusher_service->is_connected()) {
-                            $pusher_service->trigger('admin-notifications', 'user-info-completed', [
-                                'session_id' => $session_id,
-                                'user_name' => $result['user_data']['name'],
-                                'user_phone' => $result['user_data']['phone'],
-                                'timestamp' => current_time('mysql')
-                            ]);
-                            
-                            if (defined('WP_DEBUG') && WP_DEBUG) {
-                                error_log("Admin notification sent via Pusher");
-                            }
-                        }
-                    }
+                if (!empty($result['user_data']['phone']) && !empty($result['user_data']['name'])) {
+                    $database->update_session_user_info(
+                        $session_id,
+                        $result['user_data']['name'],
+                        $result['user_data']['phone'],
+                        ''
+                    );
                 }
-                
-                // پاسخ موفقیت‌آمیز با state کامل
-                $response = [
-                    'success' => true,
-                    'data' => [
-                        'next_step' => $result['next_step'] ?? $result['state']['current_step'],
-                        'message' => $result['message'],
-                        'state' => $result['state'],
-                        'user_data' => $result['user_data'],
-                        'requires_input' => $result['state']['requires_input'],
-                        'input_type' => $result['state']['input_type'],
-                        'input_placeholder' => $result['state']['input_placeholder'],
-                        'input_hint' => $result['state']['input_hint']
-                    ]
-                ];
-                
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log("Sending success response");
-                    error_log(print_r($response, true));
-                }
-                
-                wp_send_json_success($response['data']);
-                
+                wp_send_json_success($result);
             } else {
-                // خطا در پردازش
-                $error_response = [
-                    'success' => false,
-                    'message' => $result['message'] ?? 'خطا در پردازش',
-                    'state' => $result['state'] ?? []
-                ];
-                
-                if (defined('WP_DEBUG') && WP_DEBUG) {
-                    error_log("Sending error response");
-                    error_log(print_r($error_response, true));
-                }
-                
-                wp_send_json_error($error_response);
+                wp_send_json_error($result['message'] ?? 'خطا در پردازش');
             }
-            
         } catch (\Exception $e) {
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('Exception in process_conversation_step: ' . $e->getMessage());
-                error_log('Trace: ' . $e->getTraceAsString());
-            }
-            
-            wp_send_json_error([
-                'message' => 'خطای سرور: ' . $e->getMessage(),
-                'exception' => defined('WP_DEBUG') && WP_DEBUG ? $e->getTraceAsString() : ''
-            ]);
-        }
-        
-        if (defined('WP_DEBUG') && WP_DEBUG) {
-            error_log('=== CHAT FRONTEND: PROCESS CONVERSATION STEP END ===');
+            wp_send_json_error('خطای سرور: ' . $e->getMessage());
         }
     }
-    
-    public function handle_get_conversation_step(): void {
 
-            // دیباگ لاگ
-        error_log('=== GET_CONVERSATION_STEP CALLED ===');
-        error_log('Session ID: ' . ($_POST['session_id'] ?? 'NONE'));
-        error_log('Nonce: ' . ($_POST['nonce'] ?? 'NONE'));
-        
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wp_live_chat_nonce')) {
-            error_log('Nonce verification failed');
-            wp_send_json_error('Nonce verification failed');
-            return;
-        }
+    public function handle_get_conversation_step(): void {
         check_ajax_referer('wp_live_chat_nonce', 'nonce');
-        
         $session_id = sanitize_text_field($_POST['session_id'] ?? '');
-        
         if (empty($session_id)) {
             wp_send_json_error('شناسه جلسه الزامی است');
-            return;
         }
-        
         try {
             $flow = new Conversation_Flow($session_id);
-            
             wp_send_json_success([
                 'current_step' => $flow->get_current_step(),
                 'user_data' => $flow->get_user_data(),
@@ -326,30 +191,24 @@ class Chat_Frontend {
                 'input_hint' => $flow->get_input_hint(),
                 'message' => $flow->get_step_message()
             ]);
-            
         } catch (\Exception $e) {
             wp_send_json_error('خطای سرور: ' . $e->getMessage());
         }
     }
-    
+
     public function handle_check_admin_status(): void {
         check_ajax_referer('wp_live_chat_nonce', 'nonce');
-        
         try {
-            // بررسی وضعیت ادمین‌ها
-            $admins = get_users([
-                'role' => 'administrator',
-                'meta_key' => 'wp_live_chat_last_activity',
-                'meta_value' => time() - 300, // 5 دقیقه اخیر
-                'meta_compare' => '>'
-            ]);
-            
-            wp_send_json_success([
-                'admin_online' => count($admins) > 0,
-                'admin_count' => count($admins),
-                'timestamp' => current_time('mysql')
-            ]);
-            
+            $admins = get_users(['role' => 'administrator']);
+            $online = false;
+            foreach ($admins as $admin) {
+                $last = (int) get_user_meta($admin->ID, 'wp_live_chat_last_activity', true);
+                if (time() - $last < 300) { // 5 دقیقه
+                    $online = true;
+                    break;
+                }
+            }
+            wp_send_json_success(['admin_online' => $online]);
         } catch (\Exception $e) {
             wp_send_json_error('خطای سرور: ' . $e->getMessage());
         }

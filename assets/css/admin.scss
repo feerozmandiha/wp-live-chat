@@ -368,18 +368,10 @@ $warning-color: #ffb900;
     }
 
         &.has-unread {
-        border-left: 4px solid #dc3232;
-        background: linear-gradient(90deg, #fff5f5, #ffffff);
-        
-            .session-user {
-                font-weight: 700;
-                color: #d32f2f;
-            }
-            
-            .unread-badge {
-                background: #dc3232;
-                animation: pulse-alert 1.5s infinite;
-            }
+            border-left: 4px solid #dc3232;
+            background: linear-gradient(90deg, #fff5f5, #ffffff);
+            .session-user { font-weight: 700; color: #d32f2f; }
+            .unread-badge { animation: pulse-alert 1.5s infinite; }
     }
     
     .unread-indicator {
