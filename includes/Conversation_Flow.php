@@ -7,10 +7,20 @@ class Conversation_Flow {
     private $current_step = 'welcome';
     private $steps = [];
     private $user_data = [];
-    private $debug_file;
     
-    public function __construct($session_id) {
-        $this->debug_log('🚀 CONSTRUCTOR STARTED - session_id: ' . $session_id);
+    public function __construct($session_id = null) {
+        $this->debug_log('🚀 CONSTRUCTOR STARTED - session_id: ' . ($session_id ?: 'null'));
+        
+        // اگر session_id داده نشده، ایجاد کن
+        if (empty($session_id)) {
+            if (!empty($_COOKIE['wp_live_chat_session'])) {
+                $session_id = sanitize_text_field($_COOKIE['wp_live_chat_session']);
+                $this->debug_log('📝 Using session_id from cookie: ' . $session_id);
+            } else {
+                $session_id = 'chat_' . $this->generate_uuid();
+                $this->debug_log('📝 Generated new session_id: ' . $session_id);
+            }
+        }
         
         $this->session_id = $session_id;
         
@@ -31,6 +41,16 @@ class Conversation_Flow {
         }
     }
     
+        // اضافه کردن تابع generate_uuid
+    private function generate_uuid() {
+        return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff),
+            mt_rand(0, 0xffff),
+            mt_rand(0, 0x3fff) | 0x8000,
+            mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
+        );
+    }
+
     private function debug_log($message) {
         if (!defined('WP_DEBUG') || !WP_DEBUG) {
             return;
@@ -40,7 +60,7 @@ class Conversation_Flow {
         $timestamp = date('Y-m-d H:i:s');
         $log_message = "[{$timestamp}] Conversation_Flow: {$message}\n";
         
-        file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
+        @file_put_contents($log_file, $log_message, FILE_APPEND | LOCK_EX);
     }
     
     private function setup_steps() {

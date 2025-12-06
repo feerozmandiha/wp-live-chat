@@ -41,23 +41,8 @@ class Frontend {
 
         $this->session_id = $this->generate_session_id();
         try {
-            // بررسی وجود کلاس Conversation_Flow
-            if (!class_exists('WP_Live_Chat\Conversation_Flow')) {
-                // اگر کلاس وجود ندارد، فایل را include کن
-                $flow_file = WP_LIVE_CHAT_PLUGIN_PATH . 'includes/Conversation_Flow.php';
-                if (file_exists($flow_file)) {
-                    require_once $flow_file;
-                } else {
-                    // اگر فایل وجود ندارد، لاگ کن و از حالت ساده استفاده کن
-                    error_log('WP Live Chat: Conversation_Flow.php not found at ' . $flow_file);
-                    $this->use_simple_flow();
-                    return;
-                }
-            }
-            
-            $this->conversation_flow = new Conversation_Flow($this->session_id);
-            $this->user_data = $this->conversation_flow->get_user_data();
-            
+            $plugin = Plugin::get_instance();
+            $this->conversation_flow = $plugin->get_service('conversation_flow');   
         } catch (Exception $e) {
             error_log('WP Live Chat: Error initializing Conversation_Flow: ' . $e->getMessage());
             $this->use_simple_flow();
