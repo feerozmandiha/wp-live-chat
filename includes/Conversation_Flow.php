@@ -14,7 +14,6 @@ class Conversation_Flow {
         $this->setup_steps();
         $this->load_user_data();
         $this->initialized = true;
-        var_dump('OK...');die;
     }
     
     private function setup_steps() {
@@ -83,6 +82,8 @@ class Conversation_Flow {
      * بررسی آیا مرحله فعلی نیاز به ورودی کاربر دارد یا خیر
      */
     public function requires_input(?string $step = null): bool {
+                var_dump('OK...');die;
+
         if (!$this->initialized) return false;
         
         try {
