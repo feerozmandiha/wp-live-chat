@@ -24,11 +24,6 @@
 // ============================================
 class ConversationFlowManager {
     constructor(frontend) {
-        if (!frontend) {
-            console.error('Frontend instance is required for ConversationFlowManager');
-            throw new Error('Frontend instance is required');
-        }
-        
         this.frontend = frontend;
         this.currentStep = 'welcome';
         this.userData = {};
@@ -36,229 +31,13 @@ class ConversationFlowManager {
         this.inputType = 'general_message';
         this.inputPlaceholder = '';
         this.inputHint = '';
-        this.historyLoadAttempted = false;
-
-        this.pusherEnabled = true;
-        this.retryCount = 0;
-        this.maxRetries = 5;
-        this.pollingInterval = null;
-        this.isPolling = false;
-        this.pusherChannel = null;
-        this.pusherAdminChannel = null;
-        this.pusherPresenceChannel = null;
-        this.adminOnline = false;
-        this.connectionHealth = {
-            lastCheck: null,
-            status: 'unknown',
-            failures: 0
-        };
-
         
         console.log('✅ ConversationFlowManager created');
-        
-        this.init();
     }
-    
-    init() {
-        console.log('Initializing conversation flow manager...');
-        this.bindEvents();
-        
-        // بارگذاری اولیه مرحله
-        setTimeout(() => {
-            this.loadCurrentStep();
-        }, 1000);
-    }
-    
-    bindEvents() {
-        // وقتی پیام سیستم از Pusher می‌آید
-        if (this.frontend.pusherChannel) {
-            this.frontend.pusherChannel.bind('system-message', (data) => {
-                if (data.step) {
-                    this.currentStep = data.step;
-                    this.updateInputUI();
-                }
-            });
-            
-            // وقتی ادمین آنلاین می‌شود
-            this.frontend.pusherChannel.bind('admin-online', () => {
-                if (this.currentStep === 'waiting_for_admin') {
-                    this.currentStep = 'admin_connected';
-                    this.showSystemMessage('👨‍💼 پشتیبان آنلاین شد. گفتگو را ادامه دهید.');
-                }
-            });
-            
-            // وقتی ادمین آفلاین می‌شود
-            this.frontend.pusherChannel.bind('admin-offline', () => {
-                if (this.currentStep === 'chat_active' || this.currentStep === 'admin_connected') {
-                    this.currentStep = 'waiting_for_admin';
-                    this.showSystemMessage('⏳ پشتیبان آفلاین شد. پیام شما ذخیره می‌شود.');
-                }
-            });
-        }
-    }
-    
-    async loadCurrentStep() {
-        try {
-            const response = await $.ajax({
-                url: this.frontend.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'get_conversation_step',
-                    nonce: this.frontend.nonce,
-                    session_id: this.frontend.sessionId
-                },
-                timeout: 5000
-            });
-            
-            if (response.success) {
-                this.currentStep = response.data.current_step;
-                this.userData = response.data.user_data || {};
-                this.requiresInput = response.data.requires_input;
-                this.inputType = response.data.input_type || 'general_message';
-                this.inputPlaceholder = response.data.input_placeholder || '';
-                this.inputHint = response.data.input_hint || '';
-                
-                // اگر مرحله پیام سیستم دارد و نیازی به ورودی کاربر ندارد، نمایش بده
-                if (response.data.message && !this.requiresInput) {
-                    this.showSystemMessage(response.data.message);
-                }
-                
-                // تنظیم placeholder و hint
-                this.updateInputUI();
-                
-                console.log('✅ Conversation flow loaded:', {
-                    step: this.currentStep,
-                    requiresInput: this.requiresInput,
-                    inputType: this.inputType
-                });
-            }
-        } catch (error) {
-            console.error('❌ Error loading conversation step:', error);
-            // حالت fallback
-            this.setupFallbackFlow();
-        }
-    }
-    
-    setupFallbackFlow() {
-        // حالت fallback برای وقتی که سرور پاسخ نمی‌دهد
-        this.currentStep = 'welcome';
-        this.requiresInput = true;
-        this.inputType = 'general_message';
-        this.inputPlaceholder = this.frontend.strings.typeMessage || 'پیام خود را تایپ کنید...';
-        this.updateInputUI();
-    }
-    
-    updateInputUI() {
-        const $textarea = this.frontend.$textarea;
-        const $inputHint = $('#wlch-input-hint');
-        
-        if (!$textarea) return;
-        
-        // تنظیم placeholder
-        $textarea.attr('placeholder', this.inputPlaceholder || this.frontend.strings.typeMessage || 'پیام خود را تایپ کنید...');
-        
-        // نمایش یا پنهان کردن hint
-        if (this.inputHint && this.requiresInput) {
-            if ($inputHint.length === 0) {
-                // ایجاد element hint
-                $('<div class="input-hint" id="wlch-input-hint"></div>')
-                    .text(this.inputHint)
-                    .insertAfter($textarea);
-            } else {
-                $inputHint.text(this.inputHint).show();
-            }
-        } else {
-            if ($inputHint.length > 0) {
-                $inputHint.hide();
-            }
-        }
-        
-        // تنظیم type برای validation
-        this.setupInputValidation();
-    }
-    
-    setupInputValidation() {
-        const $textarea = this.frontend.$textarea;
-        
-        // حذف event listeners قبلی
-        $textarea.off('input.validation');
-        
-        // اعتبارسنجی بر اساس نوع input
-        switch(this.inputType) {
-            case 'phone':
-                $textarea.on('input.validation', () => {
-                    const text = $textarea.val().trim();
-                    const phoneRegex = /^09[0-9]{0,9}$/;
-                    
-                    if (text && !phoneRegex.test(text)) {
-                        $textarea.addClass('input-error');
-                        this.showInlineError('فرمت شماره موبایل صحیح نیست (09xxxxxxxxx)');
-                    } else {
-                        $textarea.removeClass('input-error');
-                        this.hideInlineError();
-                    }
-                });
-                break;
-                
-            case 'name':
-                $textarea.on('input.validation', () => {
-                    const text = $textarea.val().trim();
-                    
-                    if (text.length > 0 && text.length < 2) {
-                        $textarea.addClass('input-error');
-                        this.showInlineError('نام باید حداقل 2 حرف باشد');
-                    } else if (text.length > 100) {
-                        $textarea.addClass('input-error');
-                        this.showInlineError('نام نمی‌تواند بیشتر از 100 حرف باشد');
-                    } else {
-                        $textarea.removeClass('input-error');
-                        this.hideInlineError();
-                    }
-                });
-                break;
-                
-            default:
-                // حذف error برای انواع دیگر
-                $textarea.removeClass('input-error');
-                this.hideInlineError();
-        }
-    }
-    
-    showInlineError(message) {
-        let $error = $('#wlch-input-error');
-        
-        if ($error.length === 0) {
-            $error = $('<div class="input-error-message" id="wlch-input-error"></div>')
-                .insertAfter(this.frontend.$textarea);
-        }
-        
-        $error.text(message).show();
-    }
-    
-    hideInlineError() {
-        $('#wlch-input-error').hide();
-    }
-    
+
     async processUserInput(message) {
-        if (!message.trim()) {
-            this.frontend.showAlert('لطفاً متنی وارد کنید', 'error', 3000);
-            return false;
-        }
-        
-        console.log('🔍 processUserInput called:', {
-            message: message.substring(0, 50),
-            currentStep: this.currentStep,
-            inputType: this.inputType
-        });
-        
-        // اعتبارسنجی client-side
-        if (!this.validateInput(message)) {
-            return false;
-        }
-        
+        // کد ساده‌تر
         try {
-            console.log('📤 Sending AJAX request to process_conversation_step...');
-            
             const response = await $.ajax({
                 url: this.frontend.ajaxurl,
                 type: 'POST',
@@ -269,17 +48,11 @@ class ConversationFlowManager {
                     input: message,
                     step: this.currentStep
                 },
-                timeout: 10000,
-                dataType: 'json'
+                timeout: 10000
             });
-            
-            console.log('📥 AJAX response received:', response);
             
             if (response.success) {
                 const result = response.data;
-                console.log('✅ Conversation step processed successfully:', result);
-                
-                // بروزرسانی وضعیت
                 this.currentStep = result.next_step;
                 this.userData = result.user_data;
                 this.requiresInput = result.requires_input;
@@ -287,148 +60,332 @@ class ConversationFlowManager {
                 this.inputPlaceholder = result.input_placeholder;
                 this.inputHint = result.input_hint;
                 
-                // نمایش پیام سیستم
-                if (result.message) {
-                    this.showSystemMessage(result.message);
-                }
-                
                 // بروزرسانی UI
                 this.updateInputUI();
                 
-                // پاک کردن متن textarea
-                this.frontend.$textarea.val('');
-                this.frontend.updateCounter();
-                
-                // اگر به مرحله chat_active رسیدیم، وضعیت ادمین را چک کن
-                if (this.currentStep === 'chat_active' || this.currentStep === 'waiting_for_admin') {
-                    this.checkAdminStatus();
-                }
-                
-                console.log('✅ Conversation step processed:', {
-                    oldStep: this.currentStep,
-                    newStep: result.next_step,
-                    inputType: result.input_type
-                });
-                
                 return true;
-            } else {
-                console.error('❌ AJAX error in response:', response.data);
-                this.frontend.showAlert(response.data || 'خطا در پردازش', 'error');
-                return false;
             }
+            return false;
         } catch (error) {
-            console.error('❌ Error in processUserInput:', error);
-            console.error('❌ Error status:', error.status);
-            console.error('❌ Error response:', error.responseText);
-            
-            this.frontend.showAlert('خطا در ارتباط با سرور', 'error');
+            console.error('Error:', error);
             return false;
         }
     }
+    
+    updateInputUI() {
+        const $textarea = this.frontend.$textarea;
+        if (!$textarea) return;
         
-    validateInput(message) {
-        const text = message.trim();
-        
-        switch(this.inputType) {
-            case 'phone':
-                const phoneRegex = /^09[0-9]{9}$/;
-                if (!phoneRegex.test(text)) {
-                    this.frontend.showAlert('لطفاً شماره موبایل معتبر وارد کنید (مثال: 09123456789)', 'error', 4000);
-                    return false;
-                }
-                break;
-                
-            case 'name':
-                if (text.length < 2) {
-                    this.frontend.showAlert('نام باید حداقل 2 حرف باشد', 'error', 4000);
-                    return false;
-                }
-                if (text.length > 100) {
-                    this.frontend.showAlert('نام نمی‌تواند بیشتر از 100 حرف باشد', 'error', 4000);
-                    return false;
-                }
-                if (/[<>{}[\]]/.test(text)) {
-                    this.frontend.showAlert('نام شامل کاراکترهای غیرمجاز است', 'error', 4000);
-                    return false;
-                }
-                break;
-        }
-        
-        return true;
+        $textarea.attr('placeholder', 
+            this.inputPlaceholder || 
+            this.frontend.strings.typeMessage || 
+            'پیام خود را تایپ کنید...'
+        );
     }
     
-    async checkAdminStatus() {
-        try {
-            const response = await $.ajax({
-                url: this.frontend.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'check_admin_status',
-                    nonce: this.frontend.nonce
-                },
-                timeout: 5000
-            });
+    // init() {
+    //     console.log('Initializing conversation flow manager...');
+    //     this.bindEvents();
+        
+    //     // بارگذاری اولیه مرحله
+    //     setTimeout(() => {
+    //         this.loadCurrentStep();
+    //     }, 1000);
+    // }
+    
+    // bindEvents() {
+    //     // وقتی پیام سیستم از Pusher می‌آید
+    //     if (this.frontend.pusherChannel) {
+    //         this.frontend.pusherChannel.bind('system-message', (data) => {
+    //             if (data.step) {
+    //                 this.currentStep = data.step;
+    //                 this.updateInputUI();
+    //             }
+    //         });
             
-            if (response.success && response.data.admin_online && this.currentStep === 'waiting_for_admin') {
-                // تغییر به مرحله chat_active
-                this.currentStep = 'admin_connected';
-                this.showSystemMessage('👨‍💼 پشتیبان آنلاین شد. گفتگو را ادامه دهید.');
+    //         // وقتی ادمین آنلاین می‌شود
+    //         this.frontend.pusherChannel.bind('admin-online', () => {
+    //             if (this.currentStep === 'waiting_for_admin') {
+    //                 this.currentStep = 'admin_connected';
+    //                 this.showSystemMessage('👨‍💼 پشتیبان آنلاین شد. گفتگو را ادامه دهید.');
+    //             }
+    //         });
+            
+    //         // وقتی ادمین آفلاین می‌شود
+    //         this.frontend.pusherChannel.bind('admin-offline', () => {
+    //             if (this.currentStep === 'chat_active' || this.currentStep === 'admin_connected') {
+    //                 this.currentStep = 'waiting_for_admin';
+    //                 this.showSystemMessage('⏳ پشتیبان آفلاین شد. پیام شما ذخیره می‌شود.');
+    //             }
+    //         });
+    //     }
+    // }
+    
+    // async loadCurrentStep() {
+    //     try {
+    //         const response = await $.ajax({
+    //             url: this.frontend.ajaxurl,
+    //             type: 'POST',
+    //             data: {
+    //                 action: 'get_conversation_step',
+    //                 nonce: this.frontend.nonce,
+    //                 session_id: this.frontend.sessionId
+    //             },
+    //             timeout: 5000
+    //         });
+            
+    //         if (response.success) {
+    //             this.currentStep = response.data.current_step;
+    //             this.userData = response.data.user_data || {};
+    //             this.requiresInput = response.data.requires_input;
+    //             this.inputType = response.data.input_type || 'general_message';
+    //             this.inputPlaceholder = response.data.input_placeholder || '';
+    //             this.inputHint = response.data.input_hint || '';
                 
-                // اطلاع به سرور
-                await this.notifyAdminConnected();
-            }
-        } catch (error) {
-            console.error('❌ Error checking admin status:', error);
-        }
-    }
+    //             // اگر مرحله پیام سیستم دارد و نیازی به ورودی کاربر ندارد، نمایش بده
+    //             if (response.data.message && !this.requiresInput) {
+    //                 this.showSystemMessage(response.data.message);
+    //             }
+                
+    //             // تنظیم placeholder و hint
+    //             this.updateInputUI();
+                
+    //             console.log('✅ Conversation flow loaded:', {
+    //                 step: this.currentStep,
+    //                 requiresInput: this.requiresInput,
+    //                 inputType: this.inputType
+    //             });
+    //         }
+    //     } catch (error) {
+    //         console.error('❌ Error loading conversation step:', error);
+    //         // حالت fallback
+    //         this.setupFallbackFlow();
+    //     }
+    // }
     
-    async notifyAdminConnected() {
-        try {
-            await $.ajax({
-                url: this.frontend.ajaxurl,
-                type: 'POST',
-                data: {
-                    action: 'notify_admin_connected',
-                    nonce: this.frontend.nonce,
-                    session_id: this.frontend.sessionId
-                },
-                timeout: 5000
-            });
-        } catch (error) {
-            console.error('❌ Error notifying admin connected:', error);
-        }
-    }
+    // setupFallbackFlow() {
+    //     // حالت fallback برای وقتی که سرور پاسخ نمی‌دهد
+    //     this.currentStep = 'welcome';
+    //     this.requiresInput = true;
+    //     this.inputType = 'general_message';
+    //     this.inputPlaceholder = this.frontend.strings.typeMessage || 'پیام خود را تایپ کنید...';
+    //     this.updateInputUI();
+    // }
     
-    showSystemMessage(message) {
-        // نمایش پیام سیستم در چت
-        this.frontend.appendMessage({
-            id: 'sys_' + Date.now(),
-            message: message,
-            user_name: 'سیستم',
-            timestamp: new Date().toISOString(),
-            type: 'system'
-        });
-    }
+    //     updateInputUI() {
+    //         const $textarea = this.frontend.$textarea;
+    //         if (!$textarea) return;
+            
+    //         $textarea.attr('placeholder', 
+    //             this.inputPlaceholder || 
+    //             this.frontend.strings.typeMessage || 
+    //             'پیام خود را تایپ کنید...'
+    //         );
+    //     }
+
     
-    getCurrentStep() {
-        return this.currentStep;
-    }
+    // setupInputValidation() {
+    //     const $textarea = this.frontend.$textarea;
+        
+    //     // حذف event listeners قبلی
+    //     $textarea.off('input.validation');
+        
+    //     // اعتبارسنجی بر اساس نوع input
+    //     switch(this.inputType) {
+    //         case 'phone':
+    //             $textarea.on('input.validation', () => {
+    //                 const text = $textarea.val().trim();
+    //                 const phoneRegex = /^09[0-9]{0,9}$/;
+                    
+    //                 if (text && !phoneRegex.test(text)) {
+    //                     $textarea.addClass('input-error');
+    //                     this.showInlineError('فرمت شماره موبایل صحیح نیست (09xxxxxxxxx)');
+    //                 } else {
+    //                     $textarea.removeClass('input-error');
+    //                     this.hideInlineError();
+    //                 }
+    //             });
+    //             break;
+                
+    //         case 'name':
+    //             $textarea.on('input.validation', () => {
+    //                 const text = $textarea.val().trim();
+                    
+    //                 if (text.length > 0 && text.length < 2) {
+    //                     $textarea.addClass('input-error');
+    //                     this.showInlineError('نام باید حداقل 2 حرف باشد');
+    //                 } else if (text.length > 100) {
+    //                     $textarea.addClass('input-error');
+    //                     this.showInlineError('نام نمی‌تواند بیشتر از 100 حرف باشد');
+    //                 } else {
+    //                     $textarea.removeClass('input-error');
+    //                     this.hideInlineError();
+    //                 }
+    //             });
+    //             break;
+                
+    //         default:
+    //             // حذف error برای انواع دیگر
+    //             $textarea.removeClass('input-error');
+    //             this.hideInlineError();
+    //     }
+    // }
     
-    getInputType() {
-        return this.inputType;
-    }
+    // showInlineError(message) {
+    //     let $error = $('#wlch-input-error');
+        
+    //     if ($error.length === 0) {
+    //         $error = $('<div class="input-error-message" id="wlch-input-error"></div>')
+    //             .insertAfter(this.frontend.$textarea);
+    //     }
+        
+    //     $error.text(message).show();
+    // }
     
-    isPhoneStep() {
-        return this.inputType === 'phone';
-    }
+    // hideInlineError() {
+    //     $('#wlch-input-error').hide();
+    // }
     
-    isNameStep() {
-        return this.inputType === 'name';
-    }
+    // async processUserInput(message) {
+    //     // کد ساده‌تر
+    //     try {
+    //         const response = await $.ajax({
+    //             url: this.frontend.ajaxurl,
+    //             type: 'POST',
+    //             data: {
+    //                 action: 'process_conversation_step',
+    //                 nonce: this.frontend.nonce,
+    //                 session_id: this.frontend.sessionId,
+    //                 input: message,
+    //                 step: this.currentStep
+    //             },
+    //             timeout: 10000
+    //         });
+            
+    //         if (response.success) {
+    //             const result = response.data;
+    //             this.currentStep = result.next_step;
+    //             this.userData = result.user_data;
+    //             this.requiresInput = result.requires_input;
+    //             this.inputType = result.input_type;
+    //             this.inputPlaceholder = result.input_placeholder;
+    //             this.inputHint = result.input_hint;
+                
+    //             // بروزرسانی UI
+    //             this.updateInputUI();
+                
+    //             return true;
+    //         }
+    //         return false;
+    //     } catch (error) {
+    //         console.error('Error:', error);
+    //         return false;
+    //     }
+    // }
+        
+    // validateInput(message) {
+    //     const text = message.trim();
+        
+    //     switch(this.inputType) {
+    //         case 'phone':
+    //             const phoneRegex = /^09[0-9]{9}$/;
+    //             if (!phoneRegex.test(text)) {
+    //                 this.frontend.showAlert('لطفاً شماره موبایل معتبر وارد کنید (مثال: 09123456789)', 'error', 4000);
+    //                 return false;
+    //             }
+    //             break;
+                
+    //         case 'name':
+    //             if (text.length < 2) {
+    //                 this.frontend.showAlert('نام باید حداقل 2 حرف باشد', 'error', 4000);
+    //                 return false;
+    //             }
+    //             if (text.length > 100) {
+    //                 this.frontend.showAlert('نام نمی‌تواند بیشتر از 100 حرف باشد', 'error', 4000);
+    //                 return false;
+    //             }
+    //             if (/[<>{}[\]]/.test(text)) {
+    //                 this.frontend.showAlert('نام شامل کاراکترهای غیرمجاز است', 'error', 4000);
+    //                 return false;
+    //             }
+    //             break;
+    //     }
+        
+    //     return true;
+    // }
     
-    isGeneralMessageStep() {
-        return this.inputType === 'general_message';
-    }
+    // async checkAdminStatus() {
+    //     try {
+    //         const response = await $.ajax({
+    //             url: this.frontend.ajaxurl,
+    //             type: 'POST',
+    //             data: {
+    //                 action: 'check_admin_status',
+    //                 nonce: this.frontend.nonce
+    //             },
+    //             timeout: 5000
+    //         });
+            
+    //         if (response.success && response.data.admin_online && this.currentStep === 'waiting_for_admin') {
+    //             // تغییر به مرحله chat_active
+    //             this.currentStep = 'admin_connected';
+    //             this.showSystemMessage('👨‍💼 پشتیبان آنلاین شد. گفتگو را ادامه دهید.');
+                
+    //             // اطلاع به سرور
+    //             await this.notifyAdminConnected();
+    //         }
+    //     } catch (error) {
+    //         console.error('❌ Error checking admin status:', error);
+    //     }
+    // }
+    
+    // async notifyAdminConnected() {
+    //     try {
+    //         await $.ajax({
+    //             url: this.frontend.ajaxurl,
+    //             type: 'POST',
+    //             data: {
+    //                 action: 'notify_admin_connected',
+    //                 nonce: this.frontend.nonce,
+    //                 session_id: this.frontend.sessionId
+    //             },
+    //             timeout: 5000
+    //         });
+    //     } catch (error) {
+    //         console.error('❌ Error notifying admin connected:', error);
+    //     }
+    // }
+    
+    // showSystemMessage(message) {
+    //     // نمایش پیام سیستم در چت
+    //     this.frontend.appendMessage({
+    //         id: 'sys_' + Date.now(),
+    //         message: message,
+    //         user_name: 'سیستم',
+    //         timestamp: new Date().toISOString(),
+    //         type: 'system'
+    //     });
+    // }
+    
+    // getCurrentStep() {
+    //     return this.currentStep;
+    // }
+    
+    // getInputType() {
+    //     return this.inputType;
+    // }
+    
+    // isPhoneStep() {
+    //     return this.inputType === 'phone';
+    // }
+    
+    // isNameStep() {
+    //     return this.inputType === 'name';
+    // }
+    
+    // isGeneralMessageStep() {
+    //     return this.inputType === 'general_message';
+    // }
 }
 // ============================================
 // پایان ConversationFlowManager
@@ -747,6 +704,38 @@ class ConversationFlowManager {
     // ---------- Pusher ----------
     // متد initPusher بهبود یافته
     initPusher() {
+
+            // Cleanup قبل از ایجاد اتصال جدید
+        if (this.pusher) {
+            try {
+                this.pusher.disconnect();
+            } catch (e) {}
+            this.pusher = null;
+        }
+
+            // تنظیمات بهبود یافته
+        const pusherOptions = {
+            cluster: this.pusherCluster,
+            forceTLS: true,
+            authEndpoint: this.ajaxurl,
+            auth: {
+                params: {
+                    action: 'pusher_auth',
+                    nonce: this.nonce,
+                    session_id: this.sessionId
+                }
+            },
+            // تنظیمات مهم برای جلوگیری از قطع
+            activityTimeout: 60000, // 1 دقیقه (کاهش از 120000)
+            pongTimeout: 15000,    // 15 ثانیه (کاهش از 30000)
+            wsHost: 'ws-' + this.pusherCluster + '.pusher.com',
+            disableStats: true, // غیرفعال کردن آمار برای بهبود سرعت
+            enabledTransports: ['ws', 'wss']
+        };
+
+        this.pusher = new Pusher(this.pusherKey, pusherOptions);
+
+
         // بررسی وجود پوشر کی و کتابخانه
         if (!this.pusherKey || typeof Pusher === 'undefined') {
             this.setConnectedStatus('offline');
@@ -939,8 +928,13 @@ class ConversationFlowManager {
             // هندل رویداد ping/pong برای ماندگاری ارتباط
             setInterval(() => {
                 if (this.pusher && this.pusher.connection.state === 'connected') {
-                    // ارسال ping برای ماندگاری ارتباط
-                    this.sendPing();
+                    try {
+                        // ارسال ping ساده
+                        this.pusher.connection.send_event('pusher:ping', {});
+                    } catch (e) {
+                        console.log('Keep-alive ping failed, reconnecting...');
+                        this.initPusher();
+                    }
                 }
             }, 45000); // هر 45 ثانیه
 

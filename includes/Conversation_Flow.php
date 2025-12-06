@@ -95,7 +95,16 @@ class Conversation_Flow {
     }
 
     public function get_full_state(): array {
-        $current_step = $this->get_current_step();
+        $current_step = $this->get_current_step(); // از این متد استفاده کن نه $this->current_step
+        
+        // مطمئن شو که stage درست تنظیم شده
+        if ($current_step === 'check_admin_status') {
+            if ($this->is_admin_online()) {
+                $current_step = 'chat_active';
+            } else {
+                $current_step = 'waiting_for_admin';
+            }
+        }
         
         return [
             'current_step' => $current_step,
@@ -106,9 +115,11 @@ class Conversation_Flow {
             'input_hint' => $this->get_input_hint($current_step),
             'message' => $this->get_step_message($current_step),
             'user_data_completed' => $this->user_data_completed(),
-            'is_admin_online' => $this->is_admin_online()
+            'is_admin_online' => $this->is_admin_online(),
+            'session_id' => $this->session_id,
+            'timestamp' => current_time('timestamp')
         ];
-    }    
+    }   
     /**
      * دریافت نوع ورودی مورد نیاز برای مرحله فعلی
      *
@@ -124,6 +135,33 @@ class Conversation_Flow {
         }
         
         return $this->steps[$step]['input_type'] ?? null;
+    }
+
+        
+    /**
+     * متد جدید: تنظیم مرحله مستقیم (برای sync)
+     */
+    public function set_current_step(string $step): bool {
+        if (isset($this->steps[$step])) {
+            $this->current_step = $step;
+            $this->save_step();
+            return true;
+        }
+        return false;
+    }
+    
+    /**
+     * متد جدید: بروزرسانی کامل flow
+     */
+    public function update_flow_state(array $state): bool {
+        if (isset($state['current_step']) && $this->set_current_step($state['current_step'])) {
+            if (isset($state['user_data']) && is_array($state['user_data'])) {
+                $this->user_data = array_merge($this->user_data, $state['user_data']);
+                $this->save_user_data();
+            }
+            return true;
+        }
+        return false;
     }
     
     /**
@@ -192,20 +230,26 @@ class Conversation_Flow {
     }
     
     public function get_current_step(): string {
-        // اگر اطلاعات کاربر کامل شده و در مرحله name_received هستیم
+        // ابتدا بررسی کن اگر اطلاعات کاربر کامل شده
         if ($this->user_data_completed() && $this->current_step === 'name_received') {
             $this->current_step = 'check_admin_status';
             $this->save_step();
+            error_log("Auto-changed to check_admin_status because user data completed");
         }
         
         // اگر در مرحله check_admin_status هستیم، وضعیت ادمین را بررسی کن
         if ($this->current_step === 'check_admin_status') {
             if ($this->is_admin_online()) {
-                $this->current_step = 'chat_active';
+                $new_step = 'chat_active';
             } else {
-                $this->current_step = 'waiting_for_admin';
+                $new_step = 'waiting_for_admin';
             }
-            $this->save_step();
+            
+            if ($this->current_step !== $new_step) {
+                $this->current_step = $new_step;
+                $this->save_step();
+                error_log("Auto-changed from check_admin_status to: " . $new_step);
+            }
         }
         
         return $this->current_step;
@@ -216,41 +260,41 @@ class Conversation_Flow {
      */
     public function process_input($input, $input_type = 'general_message') {
         
-        error_log("=== CONVERSATION FLOW DEBUG ===");
-        error_log("Session ID: " . $this->session_id);
+        error_log("=== CONVERSATION FLOW PROCESS INPUT ===");
+        error_log("Session: " . $this->session_id);
         error_log("Current Step: " . $this->current_step);
         error_log("Input Type: " . $input_type);
         error_log("Input: " . substr($input, 0, 50));
         
-        // ابتدا مرحله فعلی واقعی را بگیر
+        // همیشه از current_step واقعی استفاده کن (نه get_current_step)
         $current_step = $this->current_step;
-        error_log("Real Current Step: " . $current_step);
+        
+        // اگر اطلاعات کاربر کامل شده و در مرحله name_received هستیم، به check_admin_status برو
+        if ($current_step === 'name_received' && $this->user_data_completed()) {
+            $current_step = 'check_admin_status';
+            $this->current_step = $current_step;
+            $this->save_step();
+            error_log("Auto-advanced to check_admin_status because user data completed");
+        }
         
         $step_config = $this->steps[$current_step] ?? null;
         
         if (!$step_config) {
-            error_log("No step config found for: " . $current_step);
-            return ['success' => false, 'message' => 'خطا در پردازش: مرحله نامعتبر'];
+            error_log("No config for step: " . $current_step);
+            return [
+                'success' => false, 
+                'message' => 'خطا: مرحله نامعتبر',
+                'state' => $this->get_full_state()
+            ];
         }
         
-        // اگر مرحله نیاز به ورودی ندارد
+        // اگر مرحله نیاز به ورودی ندارد، فقط state کنونی را برگردان
         if (!$step_config['requires_input']) {
-            error_log("Step does not require input");
-            $next_step = $step_config['next_step'] ?? $current_step;
-            
-            // بروزرسانی مرحله
-            $this->current_step = $next_step;
-            $this->save_step();
-            
+            error_log("Step doesn't require input, returning current state");
             return [
                 'success' => true,
-                'next_step' => $next_step,
-                'message' => $this->get_step_message($next_step),
-                'user_data' => $this->user_data,
-                'requires_input' => $this->requires_input($next_step),
-                'input_type' => $this->get_input_type($next_step),
-                'input_placeholder' => $this->get_input_placeholder($next_step),
-                'input_hint' => $this->get_input_hint($next_step)
+                'state' => $this->get_full_state(),
+                'message' => $this->get_step_message($current_step)
             ];
         }
         
@@ -258,23 +302,28 @@ class Conversation_Flow {
         if (isset($step_config['validation']) && is_callable($step_config['validation'])) {
             $validation_result = call_user_func($step_config['validation'], $input);
             if (!$validation_result['valid']) {
-                error_log("Validation failed: " . ($validation_result['message'] ?? 'Unknown'));
-                return $validation_result;
+                error_log("Validation failed: " . ($validation_result['message'] ?? ''));
+                return array_merge($validation_result, [
+                    'state' => $this->get_full_state()
+                ]);
             }
         }
         
-        // ذخیره اطلاعات بر اساس نوع input
+        // ذخیره اطلاعات
+        $field_saved = false;
         switch ($step_config['input_type'] ?? 'general_message') {
             case 'phone':
                 $this->user_data['phone'] = $input;
                 $this->log_user_data('phone', $input);
-                error_log("Phone saved: " . substr($input, 0, 3) . "***");
+                $field_saved = true;
+                error_log("Phone saved");
                 break;
                 
             case 'name':
                 $this->user_data['name'] = $input;
                 $this->log_user_data('name', $input);
-                error_log("Name saved: " . substr($input, 0, 1) . "***");
+                $field_saved = true;
+                error_log("Name saved");
                 break;
                 
             case 'general_message':
@@ -286,22 +335,29 @@ class Conversation_Flow {
         }
         
         // ذخیره اطلاعات کاربر
-        $this->save_user_data();
-        error_log("User data saved");
+        if ($field_saved) {
+            $this->save_user_data();
+            error_log("User data saved to transient");
+            
+            // اگر اطلاعات کاربر کامل شد، اطلاعات session را هم بروزرسانی کن
+            if ($this->user_data_completed()) {
+                $this->update_session_user_info();
+                error_log("Session user info updated in database");
+            }
+        }
         
         // تعیین مرحله بعدی
         $next_step = $step_config['next_step'] ?? $current_step;
-        error_log("Next step from config: " . $next_step);
         
         // منطق ویژه برای انتقال مراحل
         if ($current_step === 'phone_received' && !empty($this->user_data['phone'])) {
             $next_step = 'name_received';
-            error_log("Changed to name_received after phone");
+            error_log("Advanced to name_received after phone");
         }
         
         if ($current_step === 'name_received' && !empty($this->user_data['name'])) {
             $next_step = 'check_admin_status';
-            error_log("Changed to check_admin_status after name");
+            error_log("Advanced to check_admin_status after name");
         }
         
         // بروزرسانی مرحله
@@ -309,49 +365,31 @@ class Conversation_Flow {
         $this->save_step();
         error_log("Step saved: " . $next_step);
         
-        // اگر اطلاعات کاربر کامل شد، اطلاعات session را بروزرسانی کن
-        if ($this->user_data_completed()) {
-            error_log("User data completed, updating session");
-            $this->update_session_user_info();
-        }
-        
-        // دریافت پیام مرحله بعدی (با منطق ویژه برای check_admin_status)
-        $next_step_message = '';
+        // اگر به مرحله check_admin_status رفتیم، وضعیت ادمین را بررسی و مرحله را تنظیم کن
         if ($next_step === 'check_admin_status') {
-            // وضعیت ادمین را بررسی و پیام مناسب را ایجاد کن
-            if ($this->is_admin_online()) {
-                $next_step_message = __('👨‍💼 پشتیبان آنلاین است. گفتگو را ادامه دهید.', 'wp-live-chat');
-                $this->current_step = 'chat_active';
-            } else {
-                $next_step_message = __('⏳ در حال حاضر پشتیبان آنلاین نیست. پیام شما ذخیره شد و به محض آنلاین شدن، پاسخ داده خواهد شد.', 'wp-live-chat');
-                $this->current_step = 'waiting_for_admin';
-            }
-            $this->save_step();
-            error_log("Admin status checked, moved to: " . $this->current_step);
+            $final_step = $this->get_current_step(); // این متد وضعیت ادمین را بررسی می‌کند
+            error_log("After admin check, final step: " . $final_step);
         } else {
-            $next_step_message = $this->get_step_message($next_step);
+            $final_step = $next_step;
         }
         
-        // تنظیم اطلاعات بازگشتی
-        $final_step = $this->current_step;
-        $requires_input = $this->requires_input($final_step);
-        $input_type = $this->get_input_type($final_step);
+        // دریافت state نهایی
+        $final_state = $this->get_full_state();
         
-        error_log("Final step: " . $final_step);
-        error_log("Requires input: " . ($requires_input ? 'YES' : 'NO'));
-        error_log("Input type: " . ($input_type ?? 'NONE'));
+        error_log("Final state prepared:");
+        error_log(print_r($final_state, true));
         
         return [
             'success' => true,
-            'next_step' => $final_step,
-            'message' => $next_step_message,
+            'state' => $final_state,
+            'message' => $this->get_step_message($final_step),
             'user_data' => $this->user_data,
-            'requires_input' => $requires_input,
-            'input_type' => $input_type,
-            'input_placeholder' => $this->get_input_placeholder($final_step),
-            'input_hint' => $this->get_input_hint($final_step)
+            'next_step' => $final_step,
+            'input_processed' => true,
+            'field_type' => $step_config['input_type'] ?? 'general_message'
         ];
     }
+
     
     
     /**
