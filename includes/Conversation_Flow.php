@@ -82,8 +82,7 @@ class Conversation_Flow {
      * بررسی آیا مرحله فعلی نیاز به ورودی کاربر دارد یا خیر
      */
     public function requires_input(?string $step = null): bool {
-                var_dump('OK...');die;
-
+        
         if (!$this->initialized) return false;
         
         try {
@@ -100,6 +99,8 @@ class Conversation_Flow {
     }
 
     public function get_full_state(): array {
+                var_dump('OK...');die;
+
         if (!$this->initialized) {
             return $this->get_default_state();
         }
