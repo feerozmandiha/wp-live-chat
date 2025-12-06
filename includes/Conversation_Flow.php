@@ -99,8 +99,7 @@ class Conversation_Flow {
     }
 
     public function get_full_state(): array {
-                var_dump('OK...');die;
-
+        
         if (!$this->initialized) {
             return $this->get_default_state();
         }
@@ -269,6 +268,8 @@ class Conversation_Flow {
     }
     
     public function process_input($input, $input_type = 'general_message') {
+                var_dump('OK...');die;
+
         if (!$this->initialized) {
             return [
                 'success' => false,
