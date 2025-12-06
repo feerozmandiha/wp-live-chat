@@ -7,6 +7,9 @@ if (!defined('ABSPATH')) {
 
 class Chat_Frontend {
     public function init(): void {
+        // فقط اگر چت فعال است، handlerها ثبت شوند
+        if (!(bool) get_option('wp_live_chat_enable_chat', true)) return;
+
         add_action('wp_ajax_nopriv_process_conversation_step', [$this, 'handle_process_conversation_step']);
         add_action('wp_ajax_process_conversation_step', [$this, 'handle_process_conversation_step']);
         add_action('wp_ajax_nopriv_get_conversation_step', [$this, 'handle_get_conversation_step']);
@@ -22,7 +25,6 @@ class Chat_Frontend {
     }
 
     public function enqueue_assets(): void {
-        if (!(bool) get_option('wp_live_chat_enable_chat', true)) return;
 
         wp_enqueue_style('wp-live-chat-frontend', WP_LIVE_CHAT_PLUGIN_URL . 'build/css/frontend-style.css', [], WP_LIVE_CHAT_VERSION);
         wp_enqueue_script('pusher', 'https://js.pusher.com/8.2.0/pusher.min.js', [], '8.2.0', true);
