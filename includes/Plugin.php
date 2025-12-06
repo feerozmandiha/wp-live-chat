@@ -107,7 +107,7 @@ class Plugin {
         
         // در فرانت‌اند فقط سرویس‌های ضروری
         if (!is_admin()) {
-            $services['frontend'] = Frontend::class;
+            // $services['frontend'] = Frontend::class;
             $services['chat_frontend'] = Chat_Frontend::class;
             $services['conversation_flow'] = Conversation_Flow::class;
         }
