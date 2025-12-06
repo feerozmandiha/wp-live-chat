@@ -10,7 +10,7 @@ class Conversation_Flow {
     private $initialized = false;
     
     public function __construct($session_id) {
-        $this->session_id = $session_id;
+        die;$this->session_id = $session_id;
         $this->setup_steps();
         $this->load_user_data();
         $this->initialized = true;
