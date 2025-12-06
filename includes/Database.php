@@ -1,160 +1,281 @@
 <?php
 namespace WP_Live_Chat;
-defined('ABSPATH') || exit;
+
+use Exception;
+use wpdb;
 
 class Database {
+    
     private $charset_collate;
-
+    
     public function init(): void {
-        // placeholder if needed
+        add_action('wp_live_chat_loaded', [$this, 'check_tables']);
     }
-
+    
     public function create_tables(): void {
         global $wpdb;
+        
         $this->charset_collate = $wpdb->get_charset_collate();
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-
-        $sessions = $wpdb->prefix . 'wp_live_chat_sessions';
-        $messages = $wpdb->prefix . 'wp_live_chat_messages';
-        $admin_reads = $wpdb->prefix . 'wp_live_chat_admin_reads';
-
-        $sql1 = "CREATE TABLE IF NOT EXISTS {$sessions} (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            session_id VARCHAR(120) NOT NULL,
-            user_id BIGINT UNSIGNED DEFAULT 0,
-            user_name VARCHAR(255),
+        
+        $this->create_chat_sessions_table();
+        $this->create_chat_messages_table();
+        $this->create_admin_sessions_table(); // اصلاح شده: حذف $ اضافی
+        
+        update_option('wp_live_chat_db_version', '1.0.0');
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Tables created successfully');
+        }
+    }
+    
+    private function create_chat_sessions_table(): void {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            session_id VARCHAR(100) NOT NULL,
+            user_id BIGINT(20) UNSIGNED DEFAULT 0,
+            user_name VARCHAR(255) NOT NULL DEFAULT 'کاربر',
             user_email VARCHAR(255),
-            user_phone VARCHAR(50),
+            user_phone VARCHAR(20),
+            user_company VARCHAR(255),
             user_ip VARCHAR(45),
             user_agent TEXT,
-            status VARCHAR(20) DEFAULT 'active',
+            status ENUM('active', 'closed', 'timeout') DEFAULT 'active',
+            unread_count INT(11) DEFAULT 0,
+            last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            closed_at DATETIME NULL,
+            PRIMARY KEY (id),
+            UNIQUE KEY session_id (session_id),
+            KEY user_id (user_id),
+            KEY status (status),
+            KEY last_activity (last_activity),
+            KEY user_phone (user_phone)
+        ) {$this->charset_collate};";
+        
+        dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
+        }
+    }
+    
+    private function create_chat_messages_table(): void {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_messages';
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            session_id VARCHAR(100) NOT NULL,
+            user_id BIGINT(20) UNSIGNED DEFAULT 0,
+            user_name VARCHAR(255) NOT NULL DEFAULT 'کاربر',
+            user_email VARCHAR(255),
+            message_type ENUM('user', 'admin', 'system') DEFAULT 'user',
+            message_content TEXT NOT NULL,
+            message_status ENUM('sent', 'delivered', 'read') DEFAULT 'sent',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY session_id (session_id),
+            KEY user_id (user_id),
+            KEY created_at (created_at),
+            KEY message_type (message_type)
+        ) {$this->charset_collate};";
+        
+        dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
+        }
+    }
+
+    private function create_admin_sessions_table(): void {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_admin_sessions';
+        
+        $sql = "CREATE TABLE IF NOT EXISTS $table_name (
+            id BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+            admin_id BIGINT(20) UNSIGNED NOT NULL,
+            status ENUM('online', 'away', 'offline') DEFAULT 'offline',
+            current_session_id VARCHAR(100),
             last_activity DATETIME DEFAULT CURRENT_TIMESTAMP,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id),
-            UNIQUE KEY session_idx (session_id)
+            UNIQUE KEY admin_id (admin_id),
+            KEY status (status),
+            KEY last_activity (last_activity)
         ) {$this->charset_collate};";
-
-        $sql2 = "CREATE TABLE IF NOT EXISTS {$messages} (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            session_id VARCHAR(120) NOT NULL,
-            user_id BIGINT UNSIGNED DEFAULT 0,
-            user_name VARCHAR(255),
-            message_type VARCHAR(20) DEFAULT 'user',
-            message_content LONGTEXT,
-            is_read TINYINT(1) DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY session_idx (session_id),
-            KEY created_idx (created_at)
-        ) {$this->charset_collate};";
-
-        $sql3 = "CREATE TABLE IF NOT EXISTS {$admin_reads} (
-            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-            session_id VARCHAR(120) NOT NULL,
-            message_id BIGINT UNSIGNED NOT NULL,
-            admin_id BIGINT UNSIGNED NOT NULL,
-            read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (id),
-            KEY msg_idx (message_id),
-            KEY session_idx (session_id)
-        ) {$this->charset_collate};";
-
-        dbDelta([$sql1, $sql2, $sql3]);
-    }
-
-    public function save_message(array $data): int {
-        global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_messages';
-
-        $now = current_time('mysql');
-        $insert = [
-            'session_id' => $data['session_id'] ?? '',
-            'user_id' => $data['user_id'] ?? 0,
-            'user_name' => $data['user_name'] ?? '',
-            'message_type' => $data['message_type'] ?? 'user',
-            'message_content' => $data['message_content'] ?? '',
-            'is_read' => $data['is_read'] ?? 0,
-            'created_at' => $now
-        ];
-
-        $format = ['%s','%d','%s','%s','%s','%d','%s'];
-        $result = $wpdb->insert($table, $insert, $format);
-        if ($result === false) {
-            throw new \Exception('DB insert failed: ' . $wpdb->last_error);
+        
+        dbDelta($sql);
+        
+        // افزودن لاگ برای دیباگ
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('WP Live Chat: Created table: ' . $table_name);
         }
-
-        // ensure session exists and update
-        $this->ensure_session_exists($insert['session_id'], ['user_name' => $insert['user_name'], 'user_id' => $insert['user_id']]);
-        $this->update_session_activity($insert['session_id']);
-        return (int) $wpdb->insert_id;
     }
-
-    public function get_session_messages(string $session_id, int $limit = 200): array {
+    
+    public function save_message(array $message_data): int {
         global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_messages';
-        $sql = $wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY created_at ASC LIMIT %d", $session_id, $limit);
-        return $wpdb->get_results($sql, ARRAY_A) ?: [];
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_messages';
+        
+        $defaults = [
+            'session_id' => '',
+            'user_id' => 0,
+            'user_name' => 'کاربر',
+            'message_type' => 'user',
+            'message_content' => '',
+            'message_status' => 'sent'
+        ];
+        
+        $data = wp_parse_args($message_data, $defaults);
+        
+        // اطمینان از وجود session
+        $this->ensure_session_exists($data['session_id'], [
+            'user_id' => $data['user_id'],
+            'user_name' => $data['user_name']
+        ]);
+        
+        $result = $wpdb->insert($table_name, $data);
+        
+        if ($result) {
+            $this->update_session_activity($data['session_id']);
+            return $wpdb->insert_id;
+        }
+        
+        return 0;
     }
-
+    
+    public function ensure_session_exists($session_id, $user_data = []): bool {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        $existing = $wpdb->get_var($wpdb->prepare(
+            "SELECT id FROM $table_name WHERE session_id = %s",
+            $session_id
+        ));
+        
+        if (!$existing) {
+            $data = [
+                'session_id' => $session_id,
+                'user_id' => $user_data['user_id'] ?? 0,
+                'user_name' => $user_data['user_name'] ?? 'کاربر',
+                'user_ip' => $this->get_user_ip(),
+                'user_agent' => $this->get_user_agent(),
+                'status' => 'active'
+            ];
+            
+            return (bool) $wpdb->insert($table_name, $data);
+        }
+        
+        return true;
+    }
+    
+    public function update_session_user_info($session_id, $user_name, $phone, $company = ''): bool {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        $data = [
+            'user_name' => $user_name,
+            'user_phone' => $phone,
+            'user_company' => $company,
+            'last_activity' => current_time('mysql')
+        ];
+        
+        $result = $wpdb->update(
+            $table_name,
+            $data,
+            ['session_id' => $session_id]
+        );
+        
+        return $result !== false;
+    }
+    
+    public function get_session_messages($session_id, $limit = 100): array {
+        global $wpdb;
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_messages';
+        
+        return $wpdb->get_results($wpdb->prepare(
+            "SELECT * FROM $table_name 
+            WHERE session_id = %s 
+            ORDER BY created_at ASC 
+            LIMIT %d",
+            $session_id,
+            $limit
+        ), ARRAY_A) ?: [];
+    }
+    
     public function get_active_sessions(): array {
         global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_sessions';
-        $sql = "SELECT * FROM {$table} WHERE status = 'active' ORDER BY last_activity DESC";
-        return $wpdb->get_results($sql, ARRAY_A) ?: [];
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        return $wpdb->get_results(
+            "SELECT * FROM $table_name 
+            WHERE status = 'active' 
+            ORDER BY last_activity DESC",
+            ARRAY_A
+        ) ?: [];
     }
-
-    public function get_unread_count(string $session_id): int {
+    
+    public function get_session($session_id): ?array {
         global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_messages';
-        $sql = $wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE session_id = %s AND is_read = 0 AND message_type = 'user'", $session_id);
-        return (int) $wpdb->get_var($sql);
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        $session = $wpdb->get_row($wpdb->prepare(
+            "SELECT * FROM $table_name WHERE session_id = %s",
+            $session_id
+        ), ARRAY_A);
+        
+        return $session ?: null;
     }
-
-    public function mark_messages_as_read(string $session_id, int $admin_id = 0, array $message_ids = []): int {
+    
+    private function update_session_activity($session_id): bool {
         global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_messages';
-        if (!empty($message_ids)) {
-            $ids = implode(',', array_map('intval', $message_ids));
-            $res = $wpdb->query("UPDATE {$table} SET is_read = 1 WHERE id IN ({$ids})");
-        } else {
-            $res = $wpdb->update($table, ['is_read' => 1], ['session_id' => $session_id], ['%d'], ['%s']);
+        
+        $table_name = $wpdb->prefix . 'wp_live_chat_sessions';
+        
+        return (bool) $wpdb->update(
+            $table_name,
+            ['last_activity' => current_time('mysql')],
+            ['session_id' => $session_id]
+        );
+    }
+    
+    private function get_user_ip(): string {
+        $ip = '';
+        
+        foreach (['HTTP_CLIENT_IP', 'HTTP_X_FORWARDED_FOR', 'REMOTE_ADDR'] as $key) {
+            if (!empty($_SERVER[$key])) {
+                $ip = $_SERVER[$key];
+                break;
+            }
         }
-        return (int) $res;
+        
+        return filter_var($ip, FILTER_VALIDATE_IP) ? $ip : '';
     }
-
-    public function get_messages_since(string $session_id, $since_id = null): array {
-        global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_messages';
-        if ($since_id) {
-            $sql = $wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s AND id > %d ORDER BY id ASC", $session_id, $since_id);
-        } else {
-            $sql = $wpdb->prepare("SELECT * FROM {$table} WHERE session_id = %s ORDER BY id ASC", $session_id);
+    
+    private function get_user_agent(): string {
+        return $_SERVER['HTTP_USER_AGENT'] ?? '';
+    }
+    
+    public function check_tables(): void {
+        $current_db_version = get_option('wp_live_chat_db_version', '0');
+        if (version_compare($current_db_version, '1.0.0', '<')) {
+            $this->create_tables();
         }
-        return $wpdb->get_results($sql, ARRAY_A) ?: [];
-    }
-
-    public function ensure_session_exists(string $session_id, array $user = []): bool {
-        global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_sessions';
-        $exists = $wpdb->get_var($wpdb->prepare("SELECT id FROM {$table} WHERE session_id = %s", $session_id));
-        if ($exists) return true;
-
-        $insert = [
-            'session_id' => $session_id,
-            'user_id' => $user['user_id'] ?? 0,
-            'user_name' => $user['user_name'] ?? '',
-            'user_ip' => $_SERVER['REMOTE_ADDR'] ?? '',
-            'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
-            'status' => 'active',
-            'last_activity' => current_time('mysql'),
-            'created_at' => current_time('mysql')
-        ];
-        return (bool) $wpdb->insert($table, $insert);
-    }
-
-    private function update_session_activity(string $session_id): void {
-        global $wpdb;
-        $table = $wpdb->prefix . 'wp_live_chat_sessions';
-        $wpdb->update($table, ['last_activity' => current_time('mysql')], ['session_id' => $session_id], ['%s'], ['%s']);
     }
 }
