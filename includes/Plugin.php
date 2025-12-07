@@ -110,56 +110,50 @@ class Plugin {
             'pusher_service' => Pusher_Service::class,
             'admin' => Admin::class,
             'chat_admin' => Chat_Admin::class,
-            'frontend' => Frontend::class,
+            'frontend' => Frontend::class, // این باید بعد از database باشد
             'blocks' => Blocks::class,
-            'database' => Database::class,
+            'database' => Database::class, // این اول باشد
             'logger' => Logger::class,
             'cache' => Cache_Manager::class,
             'rest_api' => REST_API::class,
             'chat_frontend' => Chat_Frontend::class,
             'pusher_auth' => Pusher_Auth::class
+            // conversation_flow را حذف کنید - lazy load می‌شود
         ];
 
-        // اضافه کردن Conversation_Flow به صورت lazy - نه در init_services
-        // زیرا نیاز به session_id دارد که بعداً ایجاد می‌شود
-        $services['conversation_flow'] = null; // اینجا null می‌گذاریم
-
-        foreach ($services as $key => $class) {
-            if ($key === 'conversation_flow') {
-                // این سرویس را بعداً ایجاد می‌کنیم
-                continue;
-            }
-            
-            if (class_exists($class)) {
-                $this->services[$key] = new $class();
-                if (method_exists($this->services[$key], 'init')) {
-                    $this->services[$key]->init();
+        // ابتدا سرویس‌های ضروری را init کنید
+        $essential_services = ['database', 'logger', 'cache'];
+        
+        foreach ($essential_services as $key) {
+            if (isset($services[$key]) && class_exists($services[$key])) {
+                try {
+                    $this->services[$key] = new $services[$key]();
+                    if (method_exists($this->services[$key], 'init')) {
+                        $this->services[$key]->init();
+                    }
+                } catch (\Exception $e) {
+                    error_log('WP Live Chat: Failed to init essential service ' . $key . ': ' . $e->getMessage());
                 }
             }
         }
         
-        // اضافه کردن method برای ایجاد lazy Conversation_Flow
-        $this->services['conversation_flow'] = function($session_id = null) {
-            if (!class_exists('WP_Live_Chat\Conversation_Flow')) {
-                return null;
+        // سپس بقیه سرویس‌ها
+        foreach ($services as $key => $class) {
+            if (in_array($key, $essential_services)) {
+                continue;
             }
             
-            try {
-                // اگر session_id داده نشده، یک session موقت ایجاد کن
-                if (empty($session_id)) {
-                    if (!empty($_COOKIE['wp_live_chat_session'])) {
-                        $session_id = sanitize_text_field($_COOKIE['wp_live_chat_session']);
-                    } else {
-                        $session_id = 'chat_' . wp_generate_uuid4();
+            if (class_exists($class)) {
+                try {
+                    $this->services[$key] = new $class();
+                    if (method_exists($this->services[$key], 'init')) {
+                        $this->services[$key]->init();
                     }
+                } catch (\Exception $e) {
+                    error_log('WP Live Chat: Failed to init service ' . $key . ': ' . $e->getMessage());
                 }
-                
-                return new Conversation_Flow($session_id);
-            } catch (\Exception $e) {
-                error_log('WP Live Chat: Failed to create Conversation_Flow: ' . $e->getMessage());
-                return null;
             }
-        };
+        }
     }
 
     public function activate(): void {
@@ -194,22 +188,36 @@ class Plugin {
     }
     
     public function get_service(string $service_name) {
+        // برای conversation_flow، lazy ایجاد کن
         if ($service_name === 'conversation_flow') {
-            // اگر conversation_flow است، closure را اجرا کن
-            if (isset($this->services[$service_name]) && is_callable($this->services[$service_name])) {
-                // session_id را از frontend بگیر یا ایجاد کن
-                $session_id = null;
-                
-                // اگر در frontend هستیم، session_id را از cookie بگیر
-                if (!is_admin()) {
-                    if (!empty($_COOKIE['wp_live_chat_session'])) {
-                        $session_id = sanitize_text_field($_COOKIE['wp_live_chat_session']);
+            if (!isset($this->services[$service_name])) {
+                // فقط وقتی نیاز است ایجاد کن
+                $this->services[$service_name] = function($session_id = null) {
+                    if (class_exists('WP_Live_Chat\Conversation_Flow')) {
+                        return new Conversation_Flow($session_id);
                     }
+                    return null;
+                };
+            }
+            
+            // اگر closure است، اجرا کن
+            if (is_callable($this->services[$service_name])) {
+                // session_id را پیدا کن
+                $session_id = null;
+                if (!empty($_COOKIE['wp_live_chat_session'])) {
+                    $session_id = sanitize_text_field($_COOKIE['wp_live_chat_session']);
                 }
                 
-                return call_user_func($this->services[$service_name], $session_id);
+                $result = call_user_func($this->services[$service_name], $session_id);
+                
+                // اگر null برگرداند، دوباره سعی کن
+                if ($result === null) {
+                    $result = new Conversation_Flow($session_id);
+                    $this->services[$service_name] = $result; // cache کن
+                }
+                
+                return $result;
             }
-            return null;
         }
         
         return $this->services[$service_name] ?? null;

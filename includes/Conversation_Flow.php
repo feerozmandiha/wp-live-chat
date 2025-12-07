@@ -9,36 +9,18 @@ class Conversation_Flow {
     private $user_data = [];
     
     public function __construct($session_id = null) {
-        $this->debug_log('🚀 CONSTRUCTOR STARTED - session_id: ' . ($session_id ?: 'null'));
-        
-        // اگر session_id داده نشده، ایجاد کن
         if (empty($session_id)) {
+            // اگر session_id داده نشده، خطا ندهید بلکه از یک session موقت استفاده کنید
             if (!empty($_COOKIE['wp_live_chat_session'])) {
                 $session_id = sanitize_text_field($_COOKIE['wp_live_chat_session']);
-                $this->debug_log('📝 Using session_id from cookie: ' . $session_id);
             } else {
-                $session_id = 'chat_' . $this->generate_uuid();
-                $this->debug_log('📝 Generated new session_id: ' . $session_id);
+                $session_id = 'temp_' . uniqid();
             }
         }
         
         $this->session_id = $session_id;
-        
-        try {
-            $this->debug_log('📝 Setting up steps...');
-            $this->setup_steps();
-            $this->debug_log('✅ Steps setup completed');
-            
-            $this->debug_log('📥 Loading user data...');
-            $this->load_user_data();
-            $this->debug_log('✅ User data loaded');
-            
-            $this->debug_log('🎉 Conversation_Flow constructed successfully');
-            
-        } catch (\Exception $e) {
-            $this->debug_log('❌ CONSTRUCTOR ERROR: ' . $e->getMessage());
-            $this->debug_log('📋 Stack trace: ' . $e->getTraceAsString());
-        }
+        $this->setup_steps();
+        $this->load_user_data();
     }
     
         // اضافه کردن تابع generate_uuid
@@ -838,5 +820,26 @@ class Conversation_Flow {
         $this->debug_log('📞 is_healthy() called - result: ' . ($healthy ? 'true' : 'false'));
         
         return $healthy;
+    }
+
+        /**
+     * اگر session_id موقت است، true برگردان
+     */
+    public function is_temporary_session(): bool {
+        return strpos($this->session_id, 'temp_') === 0;
+    }
+    
+    /**
+     * دریافت session_id
+     */
+    public function get_session_id(): string {
+        return $this->session_id;
+    }
+    
+    /**
+     * بررسی سالم بودن کلاس
+     */
+    public function is_valid(): bool {
+        return !empty($this->session_id) && !empty($this->steps);
     }
 }

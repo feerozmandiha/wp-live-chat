@@ -11,42 +11,82 @@ use Exception;
 class Frontend {
     private string $session_id;
     private array $user_data = [];
-    private Conversation_Flow $conversation_flow;
+    private ?Conversation_Flow $conversation_flow = null; // تغییر: nullable type
     
 
     public function init(): void {
         add_action('wp_enqueue_scripts', [$this, 'enqueue_assets']);
         add_action('wp_footer', [$this, 'render_chat_widget']);
         add_action('wp_ajax_send_chat_message', [$this, 'handle_send_chat_message']);
-        add_action('wp_ajax_nopriv_send_chat_message', [$this, 'handle_send_chat_message']);
-        
-        // add_action('wp_ajax_get_conversation_step', [$this, 'handle_get_conversation_step']);
-        // add_action('wp_ajax_nopriv_get_conversation_step', [$this, 'handle_get_conversation_step']);
-        
-        // add_action('wp_ajax_process_conversation_step', [$this, 'handle_process_conversation_step']);
-        // add_action('wp_ajax_nopriv_process_conversation_step', [$this, 'handle_process_conversation_step']);
-        
-        // add_action('wp_ajax_check_admin_status', [$this, 'handle_check_admin_status']);
-        // add_action('wp_ajax_nopriv_check_admin_status', [$this, 'handle_check_admin_status']);
-        // add_action('wp_ajax_handle_notify_admin_connected', [$this, 'handle_notify_admin_connected']);
-        // add_action('wp_ajax_nopriv_handle_notify_admin_connected', [$this, 'handle_notify_admin_connected']);
+        add_action('wp_ajax_nopriv_send_chat_message', [$this, 'handle_send_chat_message']);     
 
-        // AJAX handlers
         add_action('wp_ajax_get_chat_history', [$this, 'handle_get_chat_history']);
         add_action('wp_ajax_nopriv_get_chat_history', [$this, 'handle_get_chat_history']);
         add_action('wp_ajax_save_user_info', [$this, 'handle_save_user_info']);
         add_action('wp_ajax_nopriv_save_user_info', [$this, 'handle_save_user_info']);
         add_action('wp_ajax_send_welcome_message', [$this, 'handle_send_welcome_message']);
         add_action('wp_ajax_nopriv_send_welcome_message', [$this, 'handle_send_welcome_message']);
-
         $this->session_id = $this->generate_session_id();
+
+    }
+
+        /**
+     * ایجاد Conversation_Flow فقط وقتی نیاز است
+     */
+    private function init_conversation_flow(): void {
+        if ($this->conversation_flow !== null) {
+            return; // قبلاً ایجاد شده
+        }
+        
         try {
-            $plugin = Plugin::get_instance();
-            $this->conversation_flow = $plugin->get_service('conversation_flow');   
+            // بررسی وجود کلاس Conversation_Flow
+            if (!class_exists('WP_Live_Chat\Conversation_Flow')) {
+                $flow_file = WP_LIVE_CHAT_PLUGIN_PATH . 'includes/Conversation_Flow.php';
+                if (file_exists($flow_file)) {
+                    require_once $flow_file;
+                } else {
+                    error_log('WP Live Chat: Conversation_Flow.php not found at ' . $flow_file);
+                    return;
+                }
+            }
+            
+            // ایجاد Conversation_Flow با session_id
+            $this->conversation_flow = new Conversation_Flow($this->session_id);
+            $this->user_data = $this->conversation_flow->get_user_data();
+            
         } catch (Exception $e) {
             error_log('WP Live Chat: Error initializing Conversation_Flow: ' . $e->getMessage());
             $this->use_simple_flow();
         }
+    }
+
+        /**
+     * دریافت Conversation_Flow - اگر null بود ایجاد کن
+     */
+    public function get_conversation_flow(): ?Conversation_Flow {
+        $this->init_conversation_flow();
+        return $this->conversation_flow;
+    }
+
+        /**
+     * برای backward compatibility
+     */
+    public function __get($name) {
+        if ($name === 'conversation_flow') {
+            return $this->get_conversation_flow();
+        }
+        return null;
+    }
+
+        /**
+     * برای backward compatibility
+     */
+    public function __isset($name) {
+        if ($name === 'conversation_flow') {
+            $this->init_conversation_flow();
+            return $this->conversation_flow !== null;
+        }
+        return false;
     }
 
     private function use_simple_flow() {
@@ -59,6 +99,19 @@ class Frontend {
                 echo '<div class="notice notice-warning"><p>WP Live Chat: Conversation Flow در حالت ساده کار می‌کند. فایل Conversation_Flow.php بررسی شود.</p></div>';
             }
         });
+    }
+
+        /**
+     * در توابعی که از conversation_flow استفاده می‌کنند، از get_conversation_flow() استفاده کنید
+     * مثال:
+     */
+    public function some_function() {
+        $flow = $this->get_conversation_flow();
+        if ($flow) {
+            // استفاده از flow
+        } else {
+            // حالت fallback
+        }
     }
 
     public function render_chat_widget(): void {
