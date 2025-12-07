@@ -1632,7 +1632,7 @@ class ConversationFlowManager {
                 url: this.ajaxurl,
                 type: 'POST',
                 data: {
-                    action: 'process_conversation_step',
+                    action: 'send_chat_message',
                     nonce: this.nonce,
                     session_id: this.sessionId,
                     input: originalText,
